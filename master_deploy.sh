@@ -434,9 +434,9 @@ fi
 
 if [ "$DEPLOYMENT_TYPE" == "EBS" ]
 then
-	#configure_aws_cli
-	#configure_docker_private_login
-	#EBS_push_docker_image
+	configure_aws_cli
+	configure_docker_private_login
+	EBS_push_docker_image
 	creating_updating_ebs_docker_json
 	creating_updating_EBS_appversion
 fi

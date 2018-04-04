@@ -209,7 +209,7 @@ track_error $? "aws elasticbeanstalk create-application-version failed."
 
 echo "updating elastic beanstalk environment ${AWS_EB_ENV} with the version ${AWS_EBS_APPVER}."
 # assumes beanstalk app for this service has already been created and configured
-aws elasticbeanstalk update-environment --environment-name $AWS_EBS_ENV_NAME --version-label $AWS_EBS_APPVER
+#aws elasticbeanstalk update-environment --environment-name $AWS_EBS_ENV_NAME --version-label $AWS_EBS_APPVER
 track_error $? "aws elasticbeanstalk update-environment failed."
 
 }

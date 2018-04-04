@@ -303,6 +303,13 @@ ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 source $BUILD_VARIABLE_FILE_NAME
 #The secret file download and decryption need to be done here
 
+SECRET_FILE_NAME="${APPNAME}-buildsecvar.conf"
+AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
+AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
+configure_aws_cli
+aws s3 cp s3://tc-platform-dev/buildconfiguration/$SECRET_FILE_NAME.cpt .
+ccdecrypt $SECRET_FILE_NAME.cpt -K $SECPASSWD
 source $SECRET_FILE_NAME
 #decrypt
 

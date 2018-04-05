@@ -16,6 +16,7 @@ AWS_SECRET_ACCESS_KEY=""
 AWS_ACCOUNT_ID=""
 AWS_REGION=""
 TAG=""
+SEC_LOCATION=""
 
 #Varibles specific to ECS
 AWS_REPOSITORY=""
@@ -27,6 +28,7 @@ AWS_ECS_TEMPLATE="container.template"
 AWS_ECS_VOLUME_TEMPLATE=""
 ECS_TAG=""
 REVISION=""
+ECS_TEMPLATE_TYPE="CONTAINER"
 
 #variable specific to EBS
 EBS_APPLICATION_NAME=""
@@ -62,7 +64,9 @@ OPTIONS:
  -e      Environment [DEV|QA|PROD]
  -t      ECS Tag Name [mandatatory if ECS ]
  -v      EBS version   [mandatatory if  EBS deployment]
- -c		 cache option true [optional : value = true| false]
+ -c		 cache option true [optional : value = true| false]i
+ -s      Security file location GIT|AWS
+ -p      ECS template type
 EOF
 }
 #log Function - Used to provide information of execution information with date and time
@@ -109,23 +113,26 @@ ECS_push_ecr_image() {
 }
 
 ECS_update_register_task_definition() {
-    task_template=`cat $AWS_ECS_TEMPLATE`
    #tag name alone need to be updated
-    task_def=$(printf "$task_template" $AWS_ECS_CONTAINER_NAME $AWS_ACCOUNT_ID $AWS_REGION $AWS_REPOSITORY $ECS_TAG)
-    echo $task_def
-    echo $AWS_ECS_VOLUME_TEMPLATE
-    if [ "$AWS_ECS_VOLUME_TEMPLATE" = "" ] ;
+    if [ "$ECS_TEMPLATE_TYPE" = "CONTAINER" ] ;     
     then
+      . /$AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
+      task_def=`cat $AWS_ECS_TASKDEF_FILE`
       echo "updating"
       if REVISION=$(aws ecs register-task-definition --container-definitions "$task_def" --family $AWS_ECS_TASK_FAMILY | $JQ '.taskDefinition.taskDefinitionArn'); then
         log "Revision: $REVISION"
       else
-		track_error 1 "Task Def registration"		
+	track_error 1 "Task Def registration"		
         log "Failed to register task definition"
         return 1
       fi
-    else
-      volume_def=`cat $AWS_ECS_VOLUME_TEMPLATE`
+    fi
+    if [ "$ECS_TEMPLATE_TYPE" = "CONTAINERVOLUME" ] ;
+    then
+      . /$AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
+      task_def=`cat $AWS_ECS_TASKDEF_FILE`
+      echo "updating"
+      volume_def=`cat $AWS_ECS_VOLUMEDEF_FILE`
       if REVISION=$(aws ecs register-task-definition --container-definitions "$task_def" --volumes "$volume_def" --family $AWS_ECS_TASK_FAMILY | $JQ '.taskDefinition.taskDefinitionArn'); then
         log "Revision: $REVISION"
       else
@@ -134,19 +141,25 @@ ECS_update_register_task_definition() {
         return 1
       fi      
     fi
-#	    if revision=$(aws ecs register-task-definition --container-definitions "$task_def" --volumes "$volume_def" --family $family | $JQ '.taskDefinition.taskDefinitionArn'); then
- #       echo "Revision: $revision"
-  #  else
-   #     echo "Failed to register task definition"
-    #    return 1
-    #fi
+    if [ "$ECS_TEMPLATE_TYPE" = "TDJSON" ] ;
+    then
+      . /$AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
+      task_def=`cat $AWS_ECS_TASKDEF_FILE`
+      if REVISION=$(aws ecs register-task-definition --cli-input-json "$task_def" | $JQ '.taskDefinition.taskDefinitionArn'); then
+        log "Revision: $REVISION"
+      else
+                track_error 1 "Task Def registration"
+        log "Failed to register task definition"
+        return 1
+      fi
+    fi
 
 }
 
 ECS_deploy_cluster() {
 
     #ECS_update_register_task_definition
-	AWS_ECS_SERVICE=$1
+    AWS_ECS_SERVICE=$1
     update_result=$(aws ecs update-service --cluster $AWS_ECS_CLUSTER --service $AWS_ECS_SERVICE --task-definition $REVISION )
     #echo $update_result
     result=$(echo $update_result | $JQ '.service.taskDefinition' )
@@ -258,7 +271,7 @@ deploy_s3bucket() {
 # Input Collection and validation
 input_collection_validation()
 {
-while getopts .d:h:e:t:v:c:. OPTION
+while getopts .d:h:e:t:v:s:p:c:. OPTION
 do
      case $OPTION in
          d)
@@ -280,8 +293,13 @@ do
          v)
              EBS_APPVER=$OPTARG
              ;;
- 
-        ?)
+         s)
+             SEC_LOCATION=$OPTARG
+             ;;
+         p)
+             ECS_TEMPLATE_TYPE=$OPTARG
+             ;;
+         ?)
              log "additional param required"
              usage
              exit
@@ -304,16 +322,21 @@ source $BUILD_VARIABLE_FILE_NAME
 #The secret file download and decryption need to be done here
 
 SECRET_FILE_NAME="${APPNAME}-buildsecvar.conf"
+if [ "$SEC_LOCATIOM" = "GIT" ] ;
+then
+pwd
+cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME .
+else
 AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
 AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
 AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
 configure_aws_cli
 aws s3 cp s3://tc-platform-dev/buildconfiguration/$SECRET_FILE_NAME.cpt .
+fi
 ccdecrypt $SECRET_FILE_NAME.cpt -K $SECPASSWD
 source $SECRET_FILE_NAME
 #decrypt
-
 
 AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
@@ -334,10 +357,11 @@ then
   AWS_ECS_SERVICE=$(eval "echo \$${ENV}_AWS_ECS_SERVICE")
   AWS_ECS_TASK_FAMILY=$(eval "echo \$${ENV}_AWS_ECS_TASK_FAMILY")
   AWS_ECS_CONTAINER_NAME=$(eval "echo \$${ENV}_AWS_ECS_CONTAINER_NAME")
-  AWS_ECS_TEMPLATE=$(eval "echo \$${ENV}_AWS_ECS_TEMPLATE")
-  AWS_ECS_VOLUME_TEMPLATE=$(eval "echo \$${ENV}_AWS_ECS_VOLUME_TEMPLATE")
+  AWS_ECS_TEMPLATE_UPDATE_SCRIPT=$(eval "echo \$${ENV}_AWS_ECS_TEMPLATE_UPDATE_SCRIPT")
+  AWS_ECS_TASKDEF_FILE=$(eval "echo \$${ENV}_AWS_ECS_TASKDEF_FILE")
+  AWS_ECS_VOLUMEDEF_FILE=$(eval "echo \$${ENV}_AWS_ECS_VOLUMEDEF_FILE")
   ECS_TAG=$TAG
-  if [ -z $AWS_REGION ] || [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_TEMPLATE ] || [ -z $ECS_TAG ];
+  if [ -z $AWS_REGION ] || [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_TEMPLATE_UPDATE_SCRIPT ] || [ -z $AWS_ECS_TASKDEF_FILE ] || [ -z $ECS_TAG ];
   then
      log "Build varibale are not updated. Please update the Build variable file"
      usage
@@ -348,7 +372,8 @@ then
   log "AWS_ECS_SERVICE  :       $AWS_ECS_SERVICE"
   log "AWS_ECS_TASK_FAMILY    : $AWS_ECS_TASK_FAMILY"
   log "AWS_ECS_CONTAINER_NAME   :       $AWS_ECS_CONTAINER_NAME"
-  log "AWS_ECS_TEMPLATE :       $AWS_ECS_TEMPLATE"
+  log "AWS_ECS_TEMPLATE_UPDATE_SCRIPT :       $AWS_ECS_TEMPLATE_UPDATE_SCRIPT"
+  log "AWS_ECS_TASKDEF_FILE :       $AWS_ECS_TASKDEF_FILE"
   log "ECS_TAG  :       $ECS_TAG"
 fi
 

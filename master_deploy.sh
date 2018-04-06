@@ -29,6 +29,7 @@ AWS_ECS_VOLUME_TEMPLATE=""
 ECS_TAG=""
 REVISION=""
 ECS_TEMPLATE_TYPE="CONTAINER"
+task_def=""
 
 #variable specific to EBS
 EBS_APPLICATION_NAME=""
@@ -144,13 +145,18 @@ ECS_update_register_task_definition() {
     if [ "$ECS_TEMPLATE_TYPE" = "TDJSON" ] ;
     then
       . $AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
-      task_def=`cat $AWS_ECS_TASKDEF_FILE`
-      if REVISION=$(aws ecs register-task-definition --cli-input-json "$task_def" | $JQ '.taskDefinition.taskDefinitionArn'); then
-        log "Revision: $REVISION"
+      #task_def=`cat $AWS_ECS_TASKDEF_FILE`
+      if [ -z $task_def ]; then
+      then 
+         track_error 1 "Task Def has not set by taskdef variable"
       else
-                track_error 1 "Task Def registration"
-        log "Failed to register task definition"
-        return 1
+        if REVISION=$(aws ecs register-task-definition --cli-input-json "$task_def" | $JQ '.taskDefinition.taskDefinitionArn'); then
+          log "Revision: $REVISION"
+        else
+          track_error 1 "Task Def registration"
+          log "Failed to register task definition"
+          return 1
+        fi
       fi
     fi
 

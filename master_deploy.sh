@@ -146,7 +146,7 @@ ECS_update_register_task_definition() {
     then
       . $AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
       #task_def=`cat $AWS_ECS_TASKDEF_FILE`
-      if [ -z $task_def ]; then
+      if [ -z $task_def ]; 
       then 
          track_error 1 "Task Def has not set by taskdef variable"
       else

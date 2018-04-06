@@ -334,7 +334,7 @@ AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
 configure_aws_cli
 aws s3 cp s3://tc-platform-dev/buildconfiguration/$SECRET_FILE_NAME.cpt .
 fi
-ccdecrypt $SECRET_FILE_NAME.cpt -K $SECPASSWD
+ccdecrypt -f $SECRET_FILE_NAME.cpt -K $SECPASSWD
 source $SECRET_FILE_NAME
 #decrypt
 
@@ -453,8 +453,9 @@ then
 		 for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
 		 do
 		   echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
-		   ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
-		   check_service_status "$AWS_ECS_SERVICE_NAME"
+		   #ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
+		   #check_service_status "$AWS_ECS_SERVICE_NAME"
+		   echo $REVISION
 		 done
 	else
 		 echo "Kindly check the service name in Parameter"

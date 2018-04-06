@@ -325,7 +325,11 @@ SECRET_FILE_NAME="${APPNAME}-buildsecvar.conf"
 if [ "$SEC_LOCATIOM" = "GIT" ] ;
 then
 pwd
-cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.cpt .
+#cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.cpt .
+cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.enc .
+#ccdecrypt -f $SECRET_FILE_NAME.cpt -K $SECPASSWD
+#openssl enc -aes-256-cbc -d -in $SECRET_FILE_NAME.enc -out $SECRET_FILE_NAME -k $SECPASSWD
+
 else
 AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
@@ -334,7 +338,12 @@ AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
 configure_aws_cli
 aws s3 cp s3://tc-platform-dev/buildconfiguration/$SECRET_FILE_NAME.cpt .
 fi
-ccdecrypt -f $SECRET_FILE_NAME.cpt -K $SECPASSWD
+if [ -f "$SECRET_FILE_NAME" ];
+then
+   rm -rf $SECRET_FILE_NAME
+fi
+#ccdecrypt -f $SECRET_FILE_NAME.cpt -K $SECPASSWD
+openssl enc -aes-256-cbc -d -in $SECRET_FILE_NAME.enc -out $SECRET_FILE_NAME -k $SECPASSWD
 source $SECRET_FILE_NAME
 #decrypt
 

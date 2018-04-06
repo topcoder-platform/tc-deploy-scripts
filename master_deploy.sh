@@ -143,7 +143,7 @@ ECS_update_register_task_definition() {
     fi
     if [ "$ECS_TEMPLATE_TYPE" = "TDJSON" ] ;
     then
-      . /$AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
+      . $AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
       task_def=`cat $AWS_ECS_TASKDEF_FILE`
       if REVISION=$(aws ecs register-task-definition --cli-input-json "$task_def" | $JQ '.taskDefinition.taskDefinitionArn'); then
         log "Revision: $REVISION"

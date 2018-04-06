@@ -325,7 +325,7 @@ SECRET_FILE_NAME="${APPNAME}-buildsecvar.conf"
 if [ "$SEC_LOCATIOM" = "GIT" ] ;
 then
 pwd
-cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME .
+cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.cpt .
 else
 AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")

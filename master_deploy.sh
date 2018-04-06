@@ -468,8 +468,8 @@ then
 		 for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
 		 do
 		   echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
-		   #ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
-		   #check_service_status "$AWS_ECS_SERVICE_NAME"
+		   ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
+		   check_service_status "$AWS_ECS_SERVICE_NAME"
 		   echo $REVISION
 		 done
 	else

@@ -328,7 +328,7 @@ source $BUILD_VARIABLE_FILE_NAME
 #The secret file download and decryption need to be done here
 
 SECRET_FILE_NAME="${APPNAME}-buildsecvar.conf"
-if [ "$SEC_LOCATIOM" = "GIT" ] ;
+if [ "$SEC_LOCATION" = "GIT" ] ;
 then
 pwd
 #cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.cpt .

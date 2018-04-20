@@ -4,11 +4,8 @@
 JQ="jq --raw-output --exit-status"
 DEPLOYMENT_TYPE=""
 ENV=""
-#BUILD_VARIABLE_FILE_NAME="./openvar.conf"
-#BUILD_VARIABLE_FILE_NAME="./openvar_ebs.conf"
 BUILD_VARIABLE_FILE_NAME="./buildvar.conf"
 SECRET_FILE_NAME="./buildsecvar.conf"
-
 
 #Common Varibles
 AWS_ACCESS_KEY_ID=""
@@ -164,10 +161,8 @@ ECS_update_register_task_definition() {
 
 ECS_deploy_cluster() {
 
-    #ECS_update_register_task_definition
     AWS_ECS_SERVICE=$1
     update_result=$(aws ecs update-service --cluster $AWS_ECS_CLUSTER --service $AWS_ECS_SERVICE --task-definition $REVISION )
-    #echo $update_result
     result=$(echo $update_result | $JQ '.service.taskDefinition' )
     log $result
     if [[ $result != $REVISION ]]; then
@@ -330,19 +325,14 @@ source $BUILD_VARIABLE_FILE_NAME
 SECRET_FILE_NAME="${APPNAME}-buildsecvar.conf"
 if [ "$SEC_LOCATION" = "GIT" ] ;
 then
-pwd
-#cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.cpt .
-cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.enc .
-#ccdecrypt -f $SECRET_FILE_NAME.cpt -K $SECPASSWD
-#openssl enc -aes-256-cbc -d -in $SECRET_FILE_NAME.enc -out $SECRET_FILE_NAME -k $SECPASSWD
-
+  cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.enc .
 else
-AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
-AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
-AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
-configure_aws_cli
-aws s3 cp s3://tc-platform-dev/buildconfiguration/$SECRET_FILE_NAME.cpt .
+  AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
+  AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
+  AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
+  AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
+  configure_aws_cli
+  aws s3 cp s3://tc-platform-dev/buildconfiguration/$SECRET_FILE_NAME.enc .
 fi
 if [ -f "$SECRET_FILE_NAME" ];
 then
@@ -360,7 +350,7 @@ AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
 if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] || [ -z $AWS_ACCOUNT_ID ] ;
 then
      log "Secret Parameters are not updated. Please upload the secret file"
-         usage
+     usage
      exit 1
 fi
 
@@ -394,15 +384,11 @@ fi
 
 if [ "$DEPLOYMENT_TYPE" == "EBS" ]
 then
-#EBS varaibale
   EBS_APPLICATION_NAME=$(eval "echo \$${ENV}_EBS_APPLICATION_NAME")
   AWS_EBS_ENV_NAME=$(eval "echo \$${ENV}_AWS_EBS_ENV_NAME")
   AWS_EBS_APPVER="${AWS_EBS_ENV_NAME}-${EBS_APPVER}"
   EBS_TAG="${IMAGE_NAME}:${ENV_CONFIG}.${EBS_APPVER}"
   IMAGE="${DOCKER_REGISTRY_NAME}/${EBS_TAG}"
-  #EBS_TAG="${IMAGE_NAME}:latest"
-  #IMAGE="${DOCKER_REGISTRY_NAME}/${EBS_TAG}"
-
   AWS_S3_BUCKET=$(eval "echo \$${ENV}_AWS_S3_BUCKET")
   AWS_S3_KEY_LOCATION=$(eval "echo \$${ENV}_AWS_S3_KEY_LOCATION")
   if [ "$AWS_S3_KEY_LOCATION" = "" ] ;
@@ -427,8 +413,6 @@ then
   log "AWS_S3_BUCKET   :       $AWS_S3_BUCKET"
   log "AWS_S3_KEY :       $AWS_S3_KEY"
   log "AWS_EB_ENV  :       $AWS_EBS_ENV_NAME"
-
-echo "BS"
 fi
 if [ "$DEPLOYMENT_TYPE" == "CFRONT" ]
 then
@@ -443,9 +427,6 @@ then
   fi
   log "AWS_S3_BUCKET   :       $AWS_S3_BUCKET"
   log "SOURCE_SYNC_PATH  :       $SOURCE_SYNC_PATH"
-
-#CFRONT VAr
-echo "CFRONT"
 fi
 }
 
@@ -493,7 +474,6 @@ fi
 if [ "$DEPLOYMENT_TYPE" == "CFRONT" ]
 then
 	configure_aws_cli
-        echo "heloo"
 	deploy_s3bucket
 fi
 }

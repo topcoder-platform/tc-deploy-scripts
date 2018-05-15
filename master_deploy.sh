@@ -339,7 +339,7 @@ then
    rm -rf $SECRET_FILE_NAME
 fi
 #ccdecrypt -f $SECRET_FILE_NAME.cpt -K $SECPASSWD
-openssl enc -aes-256-cbc -d -in $SECRET_FILE_NAME.enc -out $SECRET_FILE_NAME -k $SECPASSWD
+openssl enc -aes-256-cbc -d -md MD5 -in $SECRET_FILE_NAME.enc -out $SECRET_FILE_NAME -k $SECPASSWD
 source $SECRET_FILE_NAME
 #decrypt
 

@@ -325,7 +325,7 @@ source $BUILD_VARIABLE_FILE_NAME
 SECRET_FILE_NAME="${APPNAME}-buildsecvar.conf"
 if [ "$SEC_LOCATION" = "GIT" ] ;
 then
-  cp ./../buildscript/$APPNAME/$SECRET_FILE_NAME.enc .
+  cp $HOME/buildscript/$APPNAME/$SECRET_FILE_NAME.enc .
 else
   AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
   AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")

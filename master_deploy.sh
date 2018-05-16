@@ -6,6 +6,7 @@ DEPLOYMENT_TYPE=""
 ENV=""
 BUILD_VARIABLE_FILE_NAME="./buildvar.conf"
 SECRET_FILE_NAME="./buildsecvar.conf"
+SHARED_PROPERTY_FILENAME=""
 
 #Common Varibles
 AWS_ACCESS_KEY_ID=""
@@ -65,6 +66,7 @@ OPTIONS:
  -c		 cache option true [optional : value = true| false]i
  -s      Security file location GIT|AWS
  -p      ECS template type
+ -g      Enter common property file which has uploaded in shared-properties folder
 EOF
 }
 #log Function - Used to provide information of execution information with date and time
@@ -272,7 +274,7 @@ deploy_s3bucket() {
 # Input Collection and validation
 input_collection_validation()
 {
-while getopts .d:h:e:t:v:s:p:c:. OPTION
+while getopts .d:h:e:t:v:s:p:g:c:. OPTION
 do
      case $OPTION in
          d)
@@ -300,6 +302,10 @@ do
          p)
              ECS_TEMPLATE_TYPE=$OPTARG
              ;;
+         g)
+             SHARED_PROPERTY_FILENAME=$OPTARG
+             ;;
+
          ?)
              log "additional param required"
              usage
@@ -318,6 +324,15 @@ fi
 log "ENV        :       $ENV"
 log "DEPLOYMENT_TYPE    :       $DEPLOYMENT_TYPE"
 ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
+
+if [ -z $SHARED_PROPERTY_FILENAME ] ;
+then
+     log "No common proerty file has provided"
+else
+     log "Common proerty file name is $SHARED_PROPERTY_FILENAME"
+     cp $HOME/buildscript/shared-properties/$SHARED_PROPERTY_FILENAME .
+     source $SHARED_PROPERTY_FILENAME
+fi
 
 source $BUILD_VARIABLE_FILE_NAME
 #The secret file download and decryption need to be done here

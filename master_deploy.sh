@@ -379,10 +379,10 @@ then
   AWS_ECS_TASK_FAMILY=$(eval "echo \$${ENV}_AWS_ECS_TASK_FAMILY")
   AWS_ECS_CONTAINER_NAME=$(eval "echo \$${ENV}_AWS_ECS_CONTAINER_NAME")
   AWS_ECS_TEMPLATE_UPDATE_SCRIPT=$(eval "echo \$${ENV}_AWS_ECS_TEMPLATE_UPDATE_SCRIPT")
-  AWS_ECS_TASKDEF_FILE=$(eval "echo \$${ENV}_AWS_ECS_TASKDEF_FILE")
-  AWS_ECS_VOLUMEDEF_FILE=$(eval "echo \$${ENV}_AWS_ECS_VOLUMEDEF_FILE")
+  #AWS_ECS_TASKDEF_FILE=$(eval "echo \$${ENV}_AWS_ECS_TASKDEF_FILE")
+  #AWS_ECS_VOLUMEDEF_FILE=$(eval "echo \$${ENV}_AWS_ECS_VOLUMEDEF_FILE")
   ECS_TAG=$TAG
-  if [ -z $AWS_REGION ] || [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_TEMPLATE_UPDATE_SCRIPT ] || [ -z $AWS_ECS_TASKDEF_FILE ] || [ -z $ECS_TAG ];
+  if [ -z $AWS_REGION ] || [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_TEMPLATE_UPDATE_SCRIPT ] || [ -z $ECS_TAG ];
   then
      log "Build varibale are not updated. Please update the Build variable file"
      usage
@@ -394,8 +394,7 @@ then
   log "AWS_ECS_TASK_FAMILY    : $AWS_ECS_TASK_FAMILY"
   log "AWS_ECS_CONTAINER_NAME   :       $AWS_ECS_CONTAINER_NAME"
   log "AWS_ECS_TEMPLATE_UPDATE_SCRIPT :       $AWS_ECS_TEMPLATE_UPDATE_SCRIPT"
-  log "AWS_ECS_TASKDEF_FILE :       $AWS_ECS_TASKDEF_FILE"
-  log "ECS_TAG  :       $ECS_TAG"
+    log "ECS_TAG  :       $ECS_TAG"
 fi
 
 if [ "$DEPLOYMENT_TYPE" == "EBS" ]

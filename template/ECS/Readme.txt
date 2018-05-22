@@ -16,4 +16,6 @@
    ./master_deploy.sh -d ECS -e QA -t <tag name> -s GIT -p <template type>
    If it is PROD, then it need to be updaate as below
    ./master_deploy.sh -d ECS -e PROD -t <tag name> -s GIT -p <template type>
+   
+Note: Ensure the template script updates the task_def variable. Also volume_def if exists
 

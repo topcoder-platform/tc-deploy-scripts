@@ -117,7 +117,7 @@ ECS_update_register_task_definition() {
     if [ "$ECS_TEMPLATE_TYPE" = "CONTAINER" ] ;     
     then
       . /$AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
-      task_def=`cat $AWS_ECS_TASKDEF_FILE`
+      #task_def=`cat $AWS_ECS_TASKDEF_FILE`
       echo "updating"
       if REVISION=$(aws ecs register-task-definition --container-definitions "$task_def" --family $AWS_ECS_TASK_FAMILY | $JQ '.taskDefinition.taskDefinitionArn'); then
         log "Revision: $REVISION"
@@ -129,10 +129,11 @@ ECS_update_register_task_definition() {
     fi
     if [ "$ECS_TEMPLATE_TYPE" = "CONTAINERVOLUME" ] ;
     then
-      . /$AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
-      task_def=`cat $AWS_ECS_TASKDEF_FILE`
+      #. /$AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
+      . $AWS_ECS_TEMPLATE_UPDATE_SCRIPT $ENV $ECS_TAG
+      #task_def=`cat $AWS_ECS_TASKDEF_FILE`
       echo "updating"
-      volume_def=`cat $AWS_ECS_VOLUMEDEF_FILE`
+      #volume_def=`cat $AWS_ECS_VOLUMEDEF_FILE`
       if REVISION=$(aws ecs register-task-definition --container-definitions "$task_def" --volumes "$volume_def" --family $AWS_ECS_TASK_FAMILY | $JQ '.taskDefinition.taskDefinitionArn'); then
         log "Revision: $REVISION"
       else

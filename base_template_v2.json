@@ -1,0 +1,30 @@
+{
+    "family": "", 
+    "taskRoleArn": "arn:aws:iam::811668436784:role/ecsTaskExecutionRole", 
+    "executionRoleArn": "arn:aws:iam::811668436784:role/ecsTaskExecutionRole", 
+    "networkMode": "host", 
+    "containerDefinitions": [
+        {
+            "name": "", 
+            "image": "", 
+            "cpu": 100, 
+            "memoryReservation": 500, 
+            "portMappings": [], 
+            "essential": true,  
+            "environment": [], 
+            "mountPoints": [], 
+            "volumesFrom": [], 
+            "logConfiguration": {
+                "logDriver": "gelf", 
+                "options": {
+                    "KeyName": ""
+                }
+            }
+        }
+    ], 
+    "volumes": [], 
+    "placementConstraints": [], 
+    "requiresCompatibilities": [
+        "EC2"
+    ]
+}

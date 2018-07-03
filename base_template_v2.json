@@ -1,7 +1,5 @@
 {
     "family": "", 
-    "taskRoleArn": "arn:aws:iam::811668436784:role/ecsTaskExecutionRole", 
-    "executionRoleArn": "arn:aws:iam::811668436784:role/ecsTaskExecutionRole", 
     "networkMode": "host", 
     "containerDefinitions": [
         {

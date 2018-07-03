@@ -179,8 +179,8 @@ template=$(echo $template | jq --arg family $AWS_ECS_TASK_FAMILY '.family=$famil
 log "Family updated"
 
 #taskrole and excution role has updated 
-template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.taskRoleArn=$taskRoleArn')
-template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.executionRoleArn=$executionRoleArn')
+#template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.taskRoleArn=$taskRoleArn')
+#template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.executionRoleArn=$executionRoleArn')
 
 #Container Name update
 template=$(echo $template | jq --arg name $AWS_ECS_CONTAINER_NAME '.containerDefinitions[0].name=$name')

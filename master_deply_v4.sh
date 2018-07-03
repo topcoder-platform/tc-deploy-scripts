@@ -599,7 +599,7 @@ input_parsing_validation $@
 
 if [ "$DEPLOYMENT_TYPE" == "ECS" ]
 then
-	#ECS_push_ecr_image
+	ECS_push_ecr_image
 	ECS_template_create_register
     echo "value of AWS_ECS_SERVICE " $AWS_ECS_SERVICE
 	AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g')

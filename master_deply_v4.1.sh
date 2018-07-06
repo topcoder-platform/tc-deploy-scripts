@@ -367,16 +367,16 @@ creating_updating_ebs_docker_json() {
 
     if [ -z "$EBS_EB_EXTENSTION_LOCATION" ];
     then
-        cat $EBS_TEMPLATE_SKELETON_FILE | sed -e "s/@IMAGE@/${EBS_TAG}/g" > $DOCKERRUN
+        cat $EBS_TEMPLATE_SKELETON_FILE | sed -e "s/@IMAGE@/${IMG_WITH_EBS_TAG}/g" > $DOCKERRUN
         echo "pushing $DOCKERRUN as ${IMG_WITH_EBS_TAG} to S3: ${AWS_S3_BUCKET}/${AWS_S3_KEY}"
         aws s3api put-object --bucket "${AWS_S3_BUCKET}" --key "${AWS_S3_KEY}" --body $DOCKERRUN
         track_error $? "aws s3api put-object failed."    
     else
-        cat $EBS_TEMPLATE_SKELETON_FILE | sed -e "s/@IMAGE@/${EBS_TAG}/g" > $DOCKERRUN
+        cat $EBS_TEMPLATE_SKELETON_FILE | sed -e "s/@IMAGE@/${IMG_WITH_EBS_TAG}/g" > $DOCKERRUN
         cp -rvf $EBS_EB_EXTENSTION_LOCATION/.ebextensions .
         jar cMf ${IMG_WITH_EBS_TAG}.zip $DOCKERRUN .ebextensions
-        echo "pushing ${EBS_TAG}.zip to S3: ${AWS_S3_BUCKET}/${AWS_S3_KEY}"
-        aws s3api put-object --bucket "${AWS_S3_BUCKET}" --key "${AWS_S3_KEY}" --body ${EBS_TAG}.zip
+        echo "pushing ${IMG_WITH_EBS_TAG}.zip to S3: ${AWS_S3_BUCKET}/${AWS_S3_KEY}"
+        aws s3api put-object --bucket "${AWS_S3_BUCKET}" --key "${AWS_S3_KEY}" --body ${IMG_WITH_EBS_TAG}.zip
         track_error $? "aws s3api put-object failed."
     fi
 }

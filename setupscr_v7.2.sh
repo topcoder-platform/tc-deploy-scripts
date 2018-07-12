@@ -296,7 +296,27 @@ ebs_mandate_var()
 }
 cfront_mandate_var()
 {
-  echo "adding CFRONT mandate var"
+    CATEGORY="awsdeployvar"
+    echo "adding CFRONT mandate var"
+    KEYNAME="AWS_S3_BUCKET"
+    read -e -p "Please enter the AWS S3 Bucket name like where application upload :  " KEYVALUE
+    if [ -z "$KEYNAME" ] || [ -z "$KEYVALUE" ] ;
+    then 
+        echo "Please provide proper AWS S3 bucket name"
+        exit       
+    else
+        add_string_type "$KEYNAME" "$KEYVALUE" "$CATEGORY"
+    fi 
+    KEYNAME="AWS_S3_SOURCE_SYNC_PATH"
+    read -e -p "Please enter the source path need to be synced :  " KEYVALUE
+    if [ -z "$KEYNAME" ] || [ -z "$KEYVALUE" ] ;
+    then 
+        echo "Please provide proper source path"
+        exit       
+    else
+        add_string_type "$KEYNAME" "$KEYVALUE" "$CATEGORY"
+    fi   
+
 }
 add_mandate_var()
 {

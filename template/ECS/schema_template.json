@@ -35,18 +35,7 @@
       ]
     },
     "app_var": {
-      "type": "object",
-      "properties": {
-        "API_CONTEXT_PATH": {
-          "type": "string"
-        },
-        "KAFKA_CLIENT_CERT_KEY": {
-          "type": "string"
-        },
-        "PORT": {
-          "type": "integer"
-        }
-      }
+      "type": "object"
     }
   },
   "required": [

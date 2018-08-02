@@ -170,8 +170,17 @@ volumeupdate() {
   let volcount=volcount+1
 }
 #============================================
+ECS_Container_HealthCheck_integ() {
+HealthCheckCmd="$1"
 
+template=$(echo $template | jq '.containerDefinitions[0].healthCheck.retries=3')
+template=$(echo $template | jq '.containerDefinitions[0].healthCheck.timeout=15')
+template=$(echo $template | jq '.containerDefinitions[0].healthCheck.interval=60')
+template=$(echo $template | jq '.containerDefinitions[0].healthCheck.startPeriod=120')
+template=$(echo $template | jq --arg  HealthCheckCmd "$HealthCheckCmd" '.containerDefinitions[0].healthCheck.command=["CMD-SHELL","HealthCheckCmd"]')
+}
 
+#============================================
 ECS_template_create_register() {
 
 #Getting Template skeleton
@@ -255,6 +264,13 @@ else
     done
     log "volumes are mapped"
 fi 
+#Conteainer health check update
+if [ -z "$AWS_ECS_CONTAINER_HEALTH_CMD" ];
+then
+    echo "No container Health check command defined"
+else
+    ECS_Container_HealthCheck_integ "$AWS_ECS_CONTAINER_HEALTH_CMD"    
+fi
 
 #updating data based on ECS deploy type
 if [ "$ECS_TEMPLATE_TYPE" == "FARGATE" ]

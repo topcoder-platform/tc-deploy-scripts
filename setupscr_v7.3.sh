@@ -448,7 +448,7 @@ user_information()
         echo -e "    command: |" 
         echo -e "      echo 'Running MasterScript...'" 
         echo -e "      cp ./../buildscript/master_deply_v4.2.sh ."  
-        echo -e "      ./master_deply_v4.2.sh -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF" 
+        echo -e "      ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF" 
        echo $(tput setaf 7)
     }
        # sed -i "" "s|#msadd1|$circleadd1|" ../circleci_template/Sample-Nodejs.yml

@@ -171,7 +171,7 @@ ecs_mandate_var()
     CATEGORY="awsdeployvar"
     echo "adding ECS mandate var"
     KEYNAME="AWS_REPOSITORY"
-    read -e -p "Please enter the AWS Repository Name :  " KEYVALUE
+    read -e -p "Please enter the Amazon ECR (repository) Name :  " KEYVALUE
     if [ -z "$KEYNAME" ] || [ -z "$KEYVALUE" ] ;
     then 
         echo "Please provide proper Repo Name"
@@ -446,7 +446,7 @@ user_information()
     { echo $(tput setaf 2)
         echo -e "- deploy:" 
         echo -e "    command: |" 
-        echo -e "      echo 'Running MasterScript...'" 
+        echo -e "      echo 'Running MasterScript'" 
         echo -e "      cp ./../buildscript/master_deply_v4.2.sh ."  
         echo -e "      ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF" 
        echo $(tput setaf 7)

@@ -181,6 +181,11 @@ template=$(echo $template | jq --arg  HealthCheckCmd "$HealthCheckCmd" '.contain
 }
 
 #============================================
+ECS_Container_cmd_integ() {
+ContainerCmd="$1"
+template=$(echo $template | jq --arg  ContainerCmd "$ContainerCmd" '.containerDefinitions[0].command=[$ContainerCmd]')
+}
+#============================================
 ECS_template_create_register() {
 
 #Getting Template skeleton
@@ -271,7 +276,13 @@ then
 else
     ECS_Container_HealthCheck_integ "$AWS_ECS_CONTAINER_HEALTH_CMD"    
 fi
-
+#Container command integration
+if [ -z "$AWS_ECS_CONTAINER_CMD" ];
+then
+    echo "No container command not defined"
+else
+    ECS_Container_cmd_integ "$AWS_ECS_CONTAINER_CMD"    
+fi
 #updating data based on ECS deploy type
 if [ "$ECS_TEMPLATE_TYPE" == "FARGATE" ]
 then

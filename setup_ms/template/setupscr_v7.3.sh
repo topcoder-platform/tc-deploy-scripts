@@ -439,7 +439,7 @@ user_information()
     echo -e "\n$(tput setaf 3)NEXT STEP \n-A)  Upload $FILENAMEBUF.json to Dev/Prod S3. Bucket tc-platform-<env>/securitymanager \n$(tput setaf 7)"
     echo -e "$(tput setaf 3)NEXT STEP \n-B)  Navigate to your app Git Repo, Append the following 2 line at .circleci/config.yml\n$(tput setaf 7)"
     echo -e "---1. COPY LINE 1 AS SHOWN BELOW (Before  $(tput setaf 4)- checkout $(tput setaf 7)) section \n"
-    circleadd1="- run: git clone --branch master https://github.com/topcoder-platform/tc-deploy-scripts ../buildscript$"
+    circleadd1="- run: git clone --branch master https://github.com/topcoder-platform/tc-deploy-scripts ../buildscript"
     circleadd2="      ./master_deply_v3.sh -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF"
     echo $(tput setaf 2)$circleadd1$(tput setaf 7)
     echo -e "\n---2. COPY LINE 2 AS SHOWN BELOW (at $(tput setaf 4)Deploy $(tput setaf 7)section). Change ENV as per Deploy type (for ex: DEV or PROD)"

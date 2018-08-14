@@ -1,0 +1,10 @@
+{
+    "awsdeployvar": {
+        "AWS_EBS_APPLICATION_NAME": "missionpossible",
+        "AWS_EBS_ENV_NAME": "ap-sometiing-dev",
+        "AWS_S3_BUCKET": "topcruise-platform-dev",
+        "AWS_S3_KEY_LOCATION": "titanic/elasticbeanstalk",
+        "DOCKER_IMAGE_NAME": "mi-tomcruise-microservice",
+        "DOCKER_REGISTRY_NAME": "mi3"
+    }
+}

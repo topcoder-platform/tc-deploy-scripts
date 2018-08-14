@@ -177,7 +177,7 @@ template=$(echo $template | jq '.containerDefinitions[0].healthCheck.retries=3')
 template=$(echo $template | jq '.containerDefinitions[0].healthCheck.timeout=15')
 template=$(echo $template | jq '.containerDefinitions[0].healthCheck.interval=60')
 template=$(echo $template | jq '.containerDefinitions[0].healthCheck.startPeriod=120')
-template=$(echo $template | jq --arg  HealthCheckCmd "$HealthCheckCmd" '.containerDefinitions[0].healthCheck.command=["CMD-SHELL",$HealthCheckCmd]')
+template=$(echo $template | jq --arg  HealthCheckCmd "$HealthCheckCmd" '.containerDefinitions[0].healthCheck.command=[$HealthCheckCmd]')
 }
 
 #============================================

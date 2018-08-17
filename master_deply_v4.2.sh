@@ -306,9 +306,9 @@ then
     then
       echo "No  FARGATE memory defined . Going with default value 2048"  
       AWS_ECS_FARGATE_MEMORY="2048"
-      template=$(echo $template | jq --argjson memory $FARGATE_MEMORY '.memory=$memory')
+      template=$(echo $template | jq --argjson memory $AWS_ECS_FARGATE_MEMORY '.memory=$memory')
     else
-      template=$(echo $template | jq --argjson memory $FARGATE_MEMORY '.memory=$memory')
+      template=$(echo $template | jq --argjson memory $AWS_ECS_FARGATE_MEMORY '.memory=$memory')
     fi
 else
     #CONTAINER_CPU

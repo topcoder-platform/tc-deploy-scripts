@@ -288,6 +288,7 @@ if [ "$ECS_TEMPLATE_TYPE" == "FARGATE" ]
 then
     #updating Network
     ECS_NETWORKTYPE="awsvpc"
+    template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.executionRoleArn=$executionRoleArn')
     template=$(echo $template | jq --arg networkMode $ECS_NETWORKTYPE '.networkMode=$networkMode')
     # Updating the compatibiltiy
     #template=$(echo $template | jq --arg requiresCompatibilities EC2 '.requiresCompatibilities[0] |= .+ $requiresCompatibilities')

@@ -290,7 +290,7 @@ then
     ECS_NETWORKTYPE="awsvpc"
     template=$(echo $template | jq --arg networkMode $ECS_NETWORKTYPE '.networkMode=$networkMode')
     # Updating the compatibiltiy
-    template=$(echo $template | jq --arg requiresCompatibilities EC2 '.requiresCompatibilities[0] |= .+ $requiresCompatibilities')
+    #template=$(echo $template | jq --arg requiresCompatibilities EC2 '.requiresCompatibilities[0] |= .+ $requiresCompatibilities')
     template=$(echo $template | jq --arg requiresCompatibilities FARGATE '.requiresCompatibilities[.requiresCompatibilities| length] |= .+ $requiresCompatibilities')
     # Updating Fargate CPU
     if [ -z $AWS_ECS_FARGATE_CPU ];

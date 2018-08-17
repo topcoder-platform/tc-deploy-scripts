@@ -331,6 +331,7 @@ fi
 if [ -z "$template" ]; 
       then 
          track_error 1 "Task Def has not set by template variable"
+	 exit 1
       else
      # echo "template values ------:" $template
         if REVISION=$(aws ecs register-task-definition --cli-input-json "$template" | $JQ '.taskDefinition.taskDefinitionArn'); then

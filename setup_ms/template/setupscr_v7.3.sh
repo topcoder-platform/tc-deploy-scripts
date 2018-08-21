@@ -436,26 +436,32 @@ user_information()
 {
    # echo "Next Step"
    circleadd1=""
-    echo -e "\n$(tput setaf 3)NEXT STEP \n-A)  Upload $FILENAMEBUF.json to Dev/Prod S3. Bucket tc-platform-<env>/securitymanager \n$(tput setaf 7)"
-    echo -e "$(tput setaf 3)NEXT STEP \n-B)  Navigate to your app Git Repo, Append the following 2 line at .circleci/config.yml\n$(tput setaf 7)"
-    echo -e "---1. COPY LINE 1 AS SHOWN BELOW (Before  $(tput setaf 4)- checkout $(tput setaf 7)) section \n"
-    circleadd1="- run: git clone --branch master https://github.com/topcoder-platform/tc-deploy-scripts ../buildscript"
+    echo -e "\n$(tput setaf 3)NEXT STEP \n-A)  i) Upload $FILENAMEBUF.json to Dev/Prod S3. Bucket tc-platform-<env>/securitymanager.$(tput setaf 7)"
+    echo -e "$(tput setaf 3)    ii) Don't forget to configure AWS access keys at Circleci ENV variable section. \n $(tput setaf 7)"
+    echo -e "$(tput setaf 3)NEXT STEP \n-B)  Navigate to your app GitRepo. At $(tput setaf 4)- deploy $(tput setaf 7)$(tput setaf 3)Section, append the following line at .circleci/config.yml$(tput setaf 7)"
+    #echo -e "---1. COPY LINE 1 AS SHOWN BELOW (Before  $(tput setaf 4)- checkout $(tput setaf 7)) section \n"
+    #circleadd1="- run: git clone --branch master https://github.com/topcoder-platform/tc-deploy-scripts ../buildscript"
     circleadd2="      ./master_deply_v3.sh -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF"
     echo $(tput setaf 2)$circleadd1$(tput setaf 7)
-    echo -e "\n---2. COPY LINE 2 AS SHOWN BELOW (at $(tput setaf 4)Deploy $(tput setaf 7)section). Change ENV as per Deploy type (for ex: DEV or PROD)"
+    echo -e "---1. COPY BELOW 6 LINES AS-IS. Change ENV as per deploy type (ex: DEV or PROD)"
     { echo $(tput setaf 2)
         echo -e "- deploy:" 
+        echo -e "    name: Running MasterScript"
         echo -e "    command: |" 
-        echo -e "      echo 'Running MasterScript'" 
+        echo -e "      git clone --branch master https://github.com/topcoder-platform/tc-deploy-scripts ../buildscript"
         echo -e "      cp ./../buildscript/master_deply_v4.2.sh ."  
-        echo -e "      ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF" 
-       echo $(tput setaf 7)
+        echo -e "      ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF"
+        echo $(tput setaf 7)
+        echo -e "For ECS FARGATE deploy type add option -p FARGATE" 
+        echo -e " $(tput setaf 2)     ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF -p FARGATE $(tput setaf 7)\n" 
+        echo -e "For common variables file var-common.json. Example option shown below, omit .json file extn" 
+        echo -e " $(tput setaf 2)     ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF,var-common -p FARGATE $(tput setaf 7)\n" 
     }
        # sed -i "" "s|#msadd1|$circleadd1|" ../circleci_template/Sample-Nodejs.yml
        # sed -i "" "s|#msadd2|$circleadd2|" ../circleci_template/Sample-Nodejs.yml
 
-    echo "---3. Pointer to copy -$(tput setaf 3) ../circleci_template/Sample-Nodejs.yml $(tput setaf 7)Search '#msadd1  #msadd2' append Line 1 & Line 2 respectively-------"
-    echo -e "\n$(tput setaf 3)FINAL STEP \n-C)  At .config.yml, validate for other project need,Langauge,Format etc. Update branch details. \n\t Check-in. MASTER SCRIPT automatically triggers. Monitor Circleci \n$(tput setaf 7)"
+    echo -e  "---2. Pointer to copy -$(tput setaf 3) ../circleci_template/Sample-Nodejs.yml $(tput setaf 7)Search '#msadd2' append Line respectively"
+    echo -e "\n$(tput setaf 3)FINAL STEP \n-C) i)   At .config.yml, validate for other project need,Langauge,Format etc. Update workflow/branch details. \n    ii)  Check-in. MASTER SCRIPT automatically triggers. Monitor Circleci. \n $(tput setaf 7)"
     
 }
 

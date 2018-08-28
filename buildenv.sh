@@ -17,12 +17,22 @@ log()
 {
    echo "`date +'%D %T'` : $1"
 }
+track_error()
+{
+   if [ $1 != "0" ]; then
+        log "$2 exited with error code $1"
+        log "completed execution IN ERROR at `date`"
+        exit $1
+   fi
+
+}
 download_buildenvfile()
 {
     Buffer_seclist=$(echo $BUILDENV_LIST | sed 's/,/ /g' )
     for listname in $Buffer_seclist;
     do
         aws s3 cp s3://tc-platform-${ENV_CONFIG}/securitymanager/$listname.json .
+        track_error $? "Environment setting"
     done
 }
 uploading_buildenvvar()
@@ -85,7 +95,6 @@ then
 else
      configure_aws_cli
 fi
-
-configure_aws_cli
+ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 download_buildenvfile
 uploading_buildenvvar

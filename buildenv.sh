@@ -47,7 +47,8 @@ uploading_buildenvvar()
         #echo $envvars
             varname=$(echo $s| jq -r ".name")
             varvalue=$(echo $s| jq -r ".value")
-            export "$varname"="$varvalue" >>"$BASH_ENV"
+            echo $varname
+            echo export "$varname"="$varvalue" >>"$BASH_ENV"
         done
         IFS=$o 
     done

@@ -380,6 +380,19 @@ check_service_status() {
         echo "$servicestatus"
 }
 
+validate_update_loggroup()
+{
+    log_group_fetch=$(aws logs describe-log-groups --log-group-name-prefix /aws/ecs/$AWS_ECS_CLUSTER | jq -r .logGroups[].logGroupName | grep "^/aws/ecs/$AWS_ECS_CLUSTER$")
+    #echo $log_group_fetch
+    if [ -z $log_group_fetch ];
+    then
+        echo "log group does not exist"
+        aws logs create-log-group --log-group-name /aws/ecs/$AWS_ECS_CLUSTER
+        track_error $? "aws log group" 
+    else
+        echo "log group exist"
+    fi
+}
 # EBS integration
 
 
@@ -669,6 +682,7 @@ input_parsing_validation $@
 
 if [ "$DEPLOYMENT_TYPE" == "ECS" ]
 then
+    validate_update_loggroup
 	ECS_push_ecr_image
 	ECS_template_create_register
     echo "value of AWS_ECS_SERVICE " $AWS_ECS_SERVICE

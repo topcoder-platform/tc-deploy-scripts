@@ -1,5 +1,22 @@
 #!/bin/bash
+usage()
+{
+cat << EOF
+usage: $0 options
 
+This script need to be executed with below option.
+
+OPTIONS:
+
+ -b      Security file location GIT|AWS
+
+EOF
+}
+#log Function - Used to provide information of execution information with date and time
+log()
+{
+   echo "`date +'%D %T'` : $1"
+}
 download_buildenvfile()
 {
     Buffer_seclist=$(echo $BUILDENV_LIST | sed 's/,/ /g' )
@@ -35,9 +52,12 @@ configure_aws_cli() {
 	log "Configured AWS CLI."
 }
 
-while getopts .b:. OPTION
+while getopts .b:e:. OPTION
 do
      case $OPTION in
+         e)
+             ENV=$OPTARG
+             ;;
          b)
              BUILDENV_LIST=$OPTARG
              ;;
@@ -57,7 +77,7 @@ if [ -z $AWS_REGION ];
 then
 AWS_REGION="us-east-1"
 fi
-if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] || [ -z $AWS_ACCOUNT_ID ] || [ -z $AWS_REGION ];
+if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] ;
 then
      log "AWS Secret Parameters are not configured in circleci/environment"
      usage

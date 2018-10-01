@@ -58,6 +58,9 @@ AWS_S3_BUCKET=""
 AWS_S3_SOURCE_SYNC_PATH=""
 CFCACHE="true"
 
+#variable for Lambda 
+AWS_LAMBDA_DEPLOY_TYPE=""
+
 #FUNCTIONS
 #usage Function - provides information like how to execute the script
 usage()
@@ -519,6 +522,30 @@ uploading_envvar()
         IFS=$o 
     done
 }
+configure_Lambda_template()
+{
+
+    if [ "$AWS_LAMBDA_DEPLOY_TYPE" == "SLS" ]
+    then
+        Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
+        for listname in $Buffer_seclist;
+        do
+            yq r $listname.json  >$listname.yml
+            a=serverless.yml
+            b="$listname.yml"
+            #python -c "import sys; from ruamel.yaml import YAML; yaml = YAML(); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(open('$b','r')); cfg['Resources']['tcdevhandler']['Properties']['Environment']['Variables']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
+            python -c "import sys; from ruamel.yaml import YAML; yaml = YAML(); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(open('$b','r')); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
+            mv -f appeneded.yaml serverless.yml 
+       done
+    fi
+
+}
+
+deploy_lambda_package()
+{
+   # sls deploy
+   echo "welcome to lambda deploy"
+}
 # decrypt_aws_sys_parameter()
 # {
 
@@ -577,6 +604,7 @@ fi
 
 log "ENV        :       $ENV"
 log "DEPLOYMENT_TYPE    :       $DEPLOYMENT_TYPE"
+log "app variable list      :       $SEC_LIST"
 ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 
 #Validating AWS configuration
@@ -671,6 +699,18 @@ then
   log "AWS_S3_BUCKET   :       $AWS_S3_BUCKET"
   log "AWS_S3_SOURCE_SYNC_PATH  :       $AWS_S3_SOURCE_SYNC_PATH"
 fi
+#CFRONT parameter validation
+if [ "$DEPLOYMENT_TYPE" == "LAMBDA" ]
+then
+
+ if [ -z $AWS_LAMBDA_DEPLOY_TYPE ] ;
+  then
+     log "Build varibale are not updated. Please update the Build variable file"
+     usage
+     exit 1
+  fi
+  log "AWS_LAMBDA_DEPLOY_TYPE   :       $AWS_LAMBDA_DEPLOY_TYPE"
+fi
 }
 
 # Main
@@ -720,6 +760,12 @@ fi
 if [ "$DEPLOYMENT_TYPE" == "CFRONT" ]
 then
 	deploy_s3bucket
+fi
+
+if [ "$DEPLOYMENT_TYPE" == "LAMBDA" ]
+then
+    configure_Lambda_template
+	deploy_lambda_package
 fi
 }
 main $@

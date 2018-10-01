@@ -7,7 +7,7 @@ usage: $0 options
 This script need to be executed with below option.
 
 OPTIONS:
-
+ -e environment
  -b      Security file location GIT|AWS
 
 EOF
@@ -48,7 +48,8 @@ uploading_buildenvvar()
             varname=$(echo $s| jq -r ".name")
             varvalue=$(echo $s| jq -r ".value")
             echo $varname
-	    export "$varname"="$varvalue"
+            echo export "$varname"="\"$varvalue\"" >>"buildenvvar"
+	        #export "$varname"="$varvalue"
             #echo export "$varname"="$varvalue" >>"$BASH_ENV"
             #echo export "$varname"="\"$varvalue\"" >> ~/.circlerc
         done

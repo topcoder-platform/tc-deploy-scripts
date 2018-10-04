@@ -528,19 +528,25 @@ configure_Lambda_template()
     if [ "$AWS_LAMBDA_DEPLOY_TYPE" == "SLS" ]
     then
         Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
+	envvars=$( cat $listname.json | jq  -c ' .app_var ')
         for listname in $Buffer_seclist;
         do
+	     o=$IFS
+             IFS=$(echo -en "\n\b")
+	     envvars=$( cat $listname.json | jq  -c ' .app_var ')
+	     cat $envvars > config/dev.json
             #yq r $listname.json  >$listname.yml
-            a=serverless.yml
-            b="$listname.json"
+            #a=serverless.yml
+            #b="$listname.json"
             #python -c "import sys; from ruamel.yaml import YAML; yaml = YAML(); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(open('$b','r')); cfg['Resources']['tcdevhandler']['Properties']['Environment']['Variables']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
             #python -c "import sys; from ruamel.yaml import YAML; yaml = YAML(); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(open('$b','r')); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
             #python -c "import sys , json , ruamel.yaml , cStringIO; jsondata = cStringIO.StringIO(); yaml = ruamel.yaml.YAML(); yaml.explicit_start = True; data = json.load(open('$b','r'), object_pairs_hook=ruamel.yaml.comments.CommentedMap) ; ruamel.yaml.scalarstring.walk_tree(data) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(jsondata.getvalue()); cfg['Resources']['tcdevhandler']['Properties']['Environment']['Variables']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
             #python -c "import sys , json , ruamel.yaml , cStringIO; jsondata = cStringIO.StringIO(); yaml = ruamel.yaml.YAML(); yaml.explicit_start = True; data = json.load(open('$b','r'), object_pairs_hook=ruamel.yaml.comments.CommentedMap) ; ruamel.yaml.scalarstring.walk_tree(data) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(jsondata.getvalue()); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
             #python -c "import sys , json , ruamel.yaml ; from io import BytesIO as StringIO ; jsondata = StringIO(); yaml = ruamel.yaml.YAML(); yaml.explicit_start = True; data = json.load(open('$b','r'), object_pairs_hook=ruamel.yaml.comments.CommentedMap) ; ruamel.yaml.scalarstring.walk_tree(data) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env= yaml.load(jsondata.getvalue()); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml','w'))"
-	    python -c "import sys , json , ruamel.yaml ; from io import BytesIO as StringIO ; jsondata = StringIO(); yaml = ruamel.yaml.YAML(); data = json.load(open('$b','r')) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env= yaml.load(jsondata.getvalue()); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml','w'))"
-            mv -f appeneded.yaml serverless.yml 
+	    #python -c "import sys , json , ruamel.yaml ; from io import BytesIO as StringIO ; jsondata = StringIO(); yaml = ruamel.yaml.YAML(); data = json.load(open('$b','r')) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env= yaml.load(jsondata.getvalue()); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml','w'))"
+            #mv -f appeneded.yaml serverless.yml 
        done
+       IFS=$o 
     fi
 
 }

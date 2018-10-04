@@ -534,7 +534,7 @@ configure_Lambda_template()
 	     o=$IFS
              IFS=$(echo -en "\n\b")
 	     envvars=$( cat $listname.json | jq  -c ' .app_var ')
-	     echo -e "$envvars" > /home/circleci/project/config/dev.json
+	     echo "$envvars" > /home/circleci/project/config/dev.json
 	     sed -i 's/\n/\\n/g' /home/circleci/project/config/dev.json
             #yq r $listname.json  >$listname.yml
             #a=serverless.yml

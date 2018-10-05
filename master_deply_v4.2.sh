@@ -555,7 +555,13 @@ configure_Lambda_template()
 deploy_lambda_package()
 {
    # sls deploy
-   echo "welcome to lambda deploy"
+    if [ "$AWS_LAMBDA_DEPLOY_TYPE" == "SLS" ]
+    then
+         echo "welcome to lambda SLS deploy"
+         sls deploy
+    fi
+	 
+	 
 }
 # decrypt_aws_sys_parameter()
 # {

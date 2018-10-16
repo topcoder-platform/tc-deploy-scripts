@@ -34,6 +34,7 @@ envcount=0
 volcount=0
 template=""
 TEMPLATE_SKELETON_FILE="base_template_v2.json"
+APP_IMAGE_NAME=""
 
 #variable specific to EBS
 DOCKERRUN="Dockerrun.aws.json"
@@ -118,6 +119,14 @@ configure_docker_private_login() {
 #ECS Deployment Functions
 
 ECS_push_ecr_image() {
+    if [ -z "$APP_IMAGE_NAME" ];
+    then
+        log "Image has followed standard format"
+    else
+        log "Image does not follow stanard format. Modifying the image and updating the ECS_TAG"
+        docker tag $APP_IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$CIRCLE_BUILD_NUM
+        ECS_TAG=$CIRCLE_BUILD_NUM
+    fi
 	log "Pushing Docker Image..."
 	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
 	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$ECS_TAG
@@ -572,7 +581,7 @@ deploy_lambda_package()
 # Input Collection and validation
 input_parsing_validation()
 {
-while getopts .d:h:e:t:v:s:p:g:c:. OPTION
+while getopts .d:h:i:e:t:v:s:p:g:c:. OPTION
 do
      case $OPTION in
          d)
@@ -581,6 +590,9 @@ do
          h)
              usage
              exit 1
+             ;;
+         i)
+             APP_IMAGE_NAME=$OPTARG
              ;;
          e)
              ENV=$OPTARG

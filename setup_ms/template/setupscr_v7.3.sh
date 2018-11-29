@@ -441,7 +441,7 @@ user_information()
     echo -e "$(tput setaf 3)NEXT STEP \n-B)  Navigate to your app GitRepo. At $(tput setaf 4)- deploy $(tput setaf 7)$(tput setaf 3)Section, append the following line at .circleci/config.yml$(tput setaf 7)"
     #echo -e "---1. COPY LINE 1 AS SHOWN BELOW (Before  $(tput setaf 4)- checkout $(tput setaf 7)) section \n"
     #circleadd1="- run: git clone --branch master https://github.com/topcoder-platform/tc-deploy-scripts ../buildscript"
-    circleadd2="      ./master_deply_v3.sh -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF"
+    circleadd2="      ./master_deploy.sh -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF"
     echo $(tput setaf 2)$circleadd1$(tput setaf 7)
     echo -e "---1. COPY BELOW 6 LINES AS-IS. Change ENV as per deploy type (ex: DEV or PROD)"
     { echo $(tput setaf 2)
@@ -449,13 +449,13 @@ user_information()
         echo -e "    name: Running MasterScript"
         echo -e "    command: |" 
         echo -e "      git clone --branch master https://github.com/topcoder-platform/tc-deploy-scripts ../buildscript"
-        echo -e "      cp ./../buildscript/master_deply_v4.2.sh ."  
-        echo -e "      ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF"
+        echo -e "      cp ./../buildscript/master_deploy.sh ."  
+        echo -e "      ./master_deploy.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF"
         echo $(tput setaf 7)
         echo -e "For ECS FARGATE deploy type add option -p FARGATE" 
-        echo -e " $(tput setaf 2)     ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF -p FARGATE $(tput setaf 7)\n" 
+        echo -e " $(tput setaf 2)     ./master_deploy.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF -p FARGATE $(tput setaf 7)\n" 
         echo -e "For common variables file var-common.json. Example option shown below, omit .json file extn" 
-        echo -e " $(tput setaf 2)     ./master_deply_v4.2.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF,var-common -p FARGATE $(tput setaf 7)\n" 
+        echo -e " $(tput setaf 2)     ./master_deploy.sh -d ECS -e DEV -t \$CIRCLE_SHA1 -s $FILENAMEBUF,var-common -p FARGATE $(tput setaf 7)\n" 
     }
        # sed -i "" "s|#msadd1|$circleadd1|" ../circleci_template/Sample-Nodejs.yml
        # sed -i "" "s|#msadd2|$circleadd2|" ../circleci_template/Sample-Nodejs.yml

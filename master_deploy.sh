@@ -537,6 +537,7 @@ configure_Lambda_template()
 
     if [ "$AWS_LAMBDA_DEPLOY_TYPE" == "SLS" ]
     then
+        mkdir -p /home/circleci/project/config
         Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
 	envvars=$( cat $listname.json | jq  -c ' .app_var ')
         for listname in $Buffer_seclist;

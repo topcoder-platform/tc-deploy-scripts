@@ -61,6 +61,7 @@ CFCACHE="true"
 
 #variable for Lambda 
 AWS_LAMBDA_DEPLOY_TYPE=""
+AWS_LAMBDA_STAGE=""
 
 #FUNCTIONS
 #usage Function - provides information like how to execute the script
@@ -542,9 +543,9 @@ configure_Lambda_template()
         do
 	     o=$IFS
              IFS=$(echo -en "\n\b")
-	     envvars=$( cat $listname.json | jq  -c ' .app_var ')
-	     echo "$envvars" > /home/circleci/project/config/dev.json
-	     sed -i 's/\\n/\\\\n/g' /home/circleci/project/config/dev.json
+	     envvars=$( cat $listname.json | jq  -c ' .app_var ')	     
+	     echo "$envvars" > /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
+	     sed -i 's/\\n/\\\\n/g' /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
             #yq r $listname.json  >$listname.yml
             #a=serverless.yml
             #b="$listname.json"
@@ -739,6 +740,14 @@ then
      exit 1
   fi
   log "AWS_LAMBDA_DEPLOY_TYPE   :       $AWS_LAMBDA_DEPLOY_TYPE"
+  
+ if [ -z $AWS_LAMBDA_STAGE ] ;
+  then
+     log "Build varibale are not updated. Please update the Build variable file"
+     usage
+     exit 1
+  fi
+  log "AWS_LAMBDA_STAGE   :       $AWS_LAMBDA_STAGE"  
 fi
 }
 

@@ -248,7 +248,7 @@ for listname in $Buffer_seclist;
 do
     local o=$IFS
     IFS=$(echo -en "\n\b")
-    envvars=$( cat $listname.json | jq  -r " .app_var_${ENV} " | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
+    envvars=$( cat $listname.json | jq  -r ' .app_var ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
     log "vars are fetched"
 
     for s in $(echo $envvars | jq -c ".[]" ); do
@@ -489,30 +489,12 @@ deploy_s3bucket() {
 		exit 1
 	fi
 }
-download_configuration()
-{
-    DOWNLOAD_ENV="PROD"
-    AWS_ACCESS_KEY_ID=$(eval "echo \$${DOWNLOAD_ENV}_AWS_ACCESS_KEY_ID")
-    AWS_SECRET_ACCESS_KEY=$(eval "echo \$${DOWNLOAD_ENV}_AWS_SECRET_ACCESS_KEY")
-    AWS_ACCOUNT_ID=$(eval "echo \$${DOWNLOAD_ENV}_AWS_ACCOUNT_ID")
-    AWS_REGION=$(eval "echo \$${DOWNLOAD_ENV}_AWS_REGION")
-    if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] || [ -z $AWS_ACCOUNT_ID ] || [ -z $AWS_REGION ];
-    then
-        log "AWS Secret Parameters are not configured in circleci/environment"
-        usage
-        exit 1
-    else
-        configure_aws_cli
-        #aws configure list
-    fi    
-}
 download_envfile()
 {
-    download_configuration
     Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g' )
     for listname in $Buffer_seclist;
     do
-        aws s3 cp s3://tc-platform-prod/securitymanager/$listname.json .
+        aws s3 cp s3://tc-platform-${ENV_CONFIG}/securitymanager/$listname.json .
         #cp $HOME/buildscript/securitymanager/$listname.json.enc .
         #SECPASSWD=$(eval "echo \$${listname}")
         #openssl enc -aes-256-cbc -d -md MD5 -in $listname.json.enc -out $listname.json -k $SECPASSWD
@@ -540,7 +522,7 @@ uploading_envvar()
     #   done
         o=$IFS
         IFS=$(echo -en "\n\b")
-        envvars=$( cat $listname.json  | jq  -r " .awsdeployvar_${ENV} " | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
+        envvars=$( cat $listname.json  | jq  -r ' .awsdeployvar ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
         for s in $(echo $envvars | jq -c ".[]" ); do
         #echo $envvars
             varname=$(echo $s| jq -r ".name")
@@ -557,12 +539,12 @@ configure_Lambda_template()
     then
         mkdir -p /home/circleci/project/config
         Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
-	    envvars=$( cat $listname.json | jq  -c " .app_var_${ENV} ")
+	envvars=$( cat $listname.json | jq  -c ' .app_var ')
         for listname in $Buffer_seclist;
         do
 	     o=$IFS
              IFS=$(echo -en "\n\b")
-	     envvars=$( cat $listname.json | jq  -c " .app_var_${ENV} ")	     
+	     envvars=$( cat $listname.json | jq  -c ' .app_var ')	     
 	     echo "$envvars" > /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
 	     sed -i 's/\\n/\\\\n/g' /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
             #yq r $listname.json  >$listname.yml
@@ -658,7 +640,6 @@ ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 
 #Validating AWS configuration
 
-download_envfile
 
 #Getting Deployment varaible only
 
@@ -676,7 +657,7 @@ else
      #aws configure list
 fi
 
-
+download_envfile
 #decrypt_fileenc
 uploading_envvar
 

@@ -55,8 +55,8 @@ EBS_TEMPLATE_FILE_NAME=""
 AWS_S3_KEY_LOCATION=""
 
 #variable for cloud front
-AWS_S3_BUCKET=""
-AWS_S3_SOURCE_SYNC_PATH=""
+#AWS_S3_BUCKET=""
+#AWS_S3_SOURCE_SYNC_PATH=""
 CFCACHE="true"
 
 #variable for Lambda 

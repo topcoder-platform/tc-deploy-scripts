@@ -248,7 +248,7 @@ for listname in $Buffer_seclist;
 do
     local o=$IFS
     IFS=$(echo -en "\n\b")
-    envvars=$( cat $listname.json | jq  -r ' .app_var ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
+    envvars=$( cat $listname.json | jq  -r ' . ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
     log "vars are fetched"
 
     for s in $(echo $envvars | jq -c ".[]" ); do
@@ -539,12 +539,12 @@ configure_Lambda_template()
     then
         mkdir -p /home/circleci/project/config
         Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
-	envvars=$( cat $listname.json | jq  -c ' .app_var ')
+	#envvars=$( cat $listname.json | jq  -c ' .app_var ')
         for listname in $Buffer_seclist;
         do
 	     o=$IFS
              IFS=$(echo -en "\n\b")
-	     envvars=$( cat $listname.json | jq  -c ' .app_var ')	     
+	     envvars=$( cat $listname.json | jq  -c ' . ')	     
 	     echo "$envvars" > /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
 	     sed -i 's/\\n/\\\\n/g' /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
             #yq r $listname.json  >$listname.yml
@@ -659,7 +659,7 @@ fi
 
 download_envfile
 #decrypt_fileenc
-uploading_envvar
+#uploading_envvar
 
 
 

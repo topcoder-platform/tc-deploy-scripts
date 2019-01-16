@@ -42,7 +42,7 @@ uploading_buildenvvar()
     do
         o=$IFS
         IFS=$(echo -en "\n\b")
-        envvars=$( cat $listname.json  | jq  -r ' .circlecibuildvar ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
+        envvars=$( cat $listname.json  | jq  -r ' . ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
         for s in $(echo $envvars | jq -c ".[]" ); do
         #echo $envvars
             varname=$(echo $s| jq -r ".name")

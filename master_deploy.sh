@@ -19,11 +19,11 @@ SEC_LIST=""
 COUNTER_LIMIT=12
 
 #Varibles specific to ECS
-AWS_REPOSITORY=""
-AWS_ECS_CLUSTER=""
-AWS_ECS_SERVICE=""
-AWS_ECS_TASK_FAMILY=""
-AWS_ECS_CONTAINER_NAME=""
+#AWS_REPOSITORY=""
+#AWS_ECS_CLUSTER=""
+#AWS_ECS_SERVICE=""
+#AWS_ECS_TASK_FAMILY=""
+#AWS_ECS_CONTAINER_NAME=""
 ECS_TAG=""
 REVISION=""
 ECS_TEMPLATE_TYPE="EC2"
@@ -38,7 +38,7 @@ APP_IMAGE_NAME=""
 
 #variable specific to EBS
 DOCKERRUN="Dockerrun.aws.json"
-EBS_EB_EXTENSTION_LOCATION=""
+#EBS_EB_EXTENSTION_LOCATION=""
 IMG_WITH_EBS_TAG=""
 EBS_TEMPLATE_SKELETON_FILE="ebs_base_template_v1.json.template"
 EBS_APPLICATION_NAME=""
@@ -46,17 +46,17 @@ EBS_APPVER=""
 EBS_TAG=""
 IMAGE=""
 AWS_EBS_APPVER=""
-AWS_S3_BUCKET=""
+#AWS_S3_BUCKET=""
 AWS_S3_KEY=""
 AWS_EB_ENV=""
 EBS_TEMPLATE_FILE_NAME=""
 #AWS_EBS_EB_DOCKERRUN_TEMPLATE_LOCATION=$(eval "echo \$${ENV}_AWS_EBS_EB_DOCKERRUN_TEMPLATE_LOCATION")
 #AWS_EBS_DOCKERRUN_TEMPLATE=$(eval "echo \$${ENV}_AWS_EBS_DOCKERRUN_TEMPLATE")
-AWS_S3_KEY_LOCATION=""
+#AWS_S3_KEY_LOCATION=""
 
 #variable for cloud front
-AWS_S3_BUCKET=""
-AWS_S3_SOURCE_SYNC_PATH=""
+#AWS_S3_BUCKET=""
+#AWS_S3_SOURCE_SYNC_PATH=""
 CFCACHE="true"
 
 #variable for Lambda 
@@ -248,7 +248,7 @@ for listname in $Buffer_seclist;
 do
     local o=$IFS
     IFS=$(echo -en "\n\b")
-    envvars=$( cat $listname.json | jq  -r ' .app_var ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
+    envvars=$( cat $listname.json | jq  -r ' . ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
     log "vars are fetched"
 
     for s in $(echo $envvars | jq -c ".[]" ); do
@@ -539,12 +539,12 @@ configure_Lambda_template()
     then
         mkdir -p /home/circleci/project/config
         Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
-	envvars=$( cat $listname.json | jq  -c ' .app_var ')
+	#envvars=$( cat $listname.json | jq  -c ' .app_var ')
         for listname in $Buffer_seclist;
         do
 	     o=$IFS
              IFS=$(echo -en "\n\b")
-	     envvars=$( cat $listname.json | jq  -c ' .app_var ')	     
+	     envvars=$( cat $listname.json | jq  -c ' . ')	     
 	     echo "$envvars" > /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
 	     sed -i 's/\\n/\\\\n/g' /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
             #yq r $listname.json  >$listname.yml
@@ -659,7 +659,7 @@ fi
 
 download_envfile
 #decrypt_fileenc
-uploading_envvar
+#uploading_envvar
 
 
 

@@ -84,21 +84,21 @@ do
      esac
 done
 
-AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
-AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
-if [ -z $AWS_REGION ];
-then
-AWS_REGION="us-east-1"
-fi
-if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] ;
-then
-     log "AWS Secret Parameters are not configured in circleci/environment"
-     usage
-     exit 1
-else
-     configure_aws_cli
-fi
+# AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
+# AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
+# AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
+# if [ -z $AWS_REGION ];
+# then
+# AWS_REGION="us-east-1"
+# fi
+# if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] ;
+# then
+#      log "AWS Secret Parameters are not configured in circleci/environment"
+#      usage
+#      exit 1
+# else
+#      configure_aws_cli
+# fi
 ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 download_buildenvfile
 uploading_buildenvvar

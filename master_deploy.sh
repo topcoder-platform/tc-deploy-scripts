@@ -10,10 +10,11 @@ SECRET_FILE_NAME="./buildsecvar.conf"
 SHARED_PROPERTY_FILENAME=""
 
 #Common Varibles
-AWS_ACCESS_KEY_ID=""
-AWS_SECRET_ACCESS_KEY=""
-AWS_ACCOUNT_ID=""
-AWS_REGION=""
+#echo $AWS_ACCESS_KEY_ID
+# AWS_ACCESS_KEY_ID=""
+# AWS_SECRET_ACCESS_KEY=""
+# AWS_ACCOUNT_ID=""
+# AWS_REGION=""
 TAG=""
 SEC_LIST=""
 COUNTER_LIMIT=12
@@ -643,19 +644,19 @@ ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 
 #Getting Deployment varaible only
 
-AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
-AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
-AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
-if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] || [ -z $AWS_ACCOUNT_ID ] || [ -z $AWS_REGION ];
-then
-     log "AWS Secret Parameters are not configured in circleci/environment"
-     usage
-     exit 1
-else
-     configure_aws_cli
-     #aws configure list
-fi
+# AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
+# AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
+# AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
+# AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
+# if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] || [ -z $AWS_ACCOUNT_ID ] || [ -z $AWS_REGION ];
+# then
+#      log "AWS Secret Parameters are not configured in circleci/environment"
+#      usage
+#      exit 1
+# else
+#      configure_aws_cli
+#      #aws configure list
+# fi
 
 download_envfile
 #decrypt_fileenc

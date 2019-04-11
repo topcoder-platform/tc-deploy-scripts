@@ -214,8 +214,13 @@ template=$(cat $TEMPLATE_SKELETON_FILE)
 template=$(echo $template | jq --arg family $AWS_ECS_TASK_FAMILY '.family=$family')
 log "Family updated"
 
-#taskrole and excution role has updated 
-#template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.taskRoleArn=$taskRoleArn')
+#taskrole and excution role has updated
+if [ -z $AWS_ECS_TASK_ROLE_ARN ];
+then
+  template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/$$AWS_ECS_TASK_ROLE_ARN '.taskRoleArn=$taskRoleArn')
+else
+  log "No Execution Role defined"
+fi
 #template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.executionRoleArn=$executionRoleArn')
 
 #Container Name update

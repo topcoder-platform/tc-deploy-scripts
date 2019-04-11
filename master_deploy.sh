@@ -217,7 +217,7 @@ log "Family updated"
 #taskrole and excution role has updated
 if [ -z $AWS_ECS_TASK_ROLE_ARN ];
 then
-  template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/$$AWS_ECS_TASK_ROLE_ARN '.taskRoleArn=$taskRoleArn')
+  template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/$AWS_ECS_TASK_ROLE_ARN '.taskRoleArn=$taskRoleArn')
 else
   log "No Execution Role defined"
 fi

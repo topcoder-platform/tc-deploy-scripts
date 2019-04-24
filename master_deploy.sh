@@ -579,7 +579,7 @@ deploy_lambda_package()
     if [ "$AWS_LAMBDA_DEPLOY_TYPE" == "SLS" ]
     then
          echo "welcome to lambda SLS deploy"
-         sls deploy --stage $AWS_LAMBDA_STAGE
+         sudo sls deploy --stage $AWS_LAMBDA_STAGE
     fi
 	 
 	 

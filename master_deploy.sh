@@ -65,8 +65,8 @@ EBS_TEMPLATE_FILE_NAME=""
 CFCACHE="true"
 
 #variable for Lambda 
-AWS_LAMBDA_DEPLOY_TYPE=""
-AWS_LAMBDA_STAGE=""
+#AWS_LAMBDA_DEPLOY_TYPE=""
+#AWS_LAMBDA_STAGE=""
 
 #FUNCTIONS
 #usage Function - provides information like how to execute the script

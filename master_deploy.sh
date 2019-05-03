@@ -45,7 +45,7 @@ APP_IMAGE_NAME=""
 DOCKERRUN="Dockerrun.aws.json"
 #EBS_EB_EXTENSTION_LOCATION=""
 IMG_WITH_EBS_TAG=""
-EBS_TEMPLATE_SKELETON_FILE="ebs_base_template_v1.json.template"
+EBS_TEMPLATE_SKELETON_FILE="ebs_base_template_v2.json.template"
 EBS_APPLICATION_NAME=""
 EBS_APPVER=""
 EBS_TAG=""
@@ -429,6 +429,9 @@ track_error $? "docker push failed."
 }
 
 creating_updating_ebs_docker_json() {
+    echo "updating auth bucket name"
+    sed -i.bak -e "s/@AWSS3AUTHBUCKET@/appirio-platform-$ENV_CONFIG/g" $EBS_TEMPLATE_SKELETON_FILE
+    rm ${EBS_TEMPLATE_SKELETON_FILE}.bak
 
     if [ -z "$EBS_EB_EXTENSTION_LOCATION" ];
     then

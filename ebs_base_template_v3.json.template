@@ -1,0 +1,15 @@
+{
+  "AWSEBDockerrunVersion": "1",
+  "Authentication": {
+    "Bucket": "@AWSS3AUTHBUCKET@",
+    "Key": "services/common/dockercfg"
+  },
+  "Image": {
+    "Name": "appiriodevops/@IMAGE@",
+    "Update": "true"
+  },
+  "Ports": [
+  ],
+  "Volumes": [],
+  "Logging": ""
+}

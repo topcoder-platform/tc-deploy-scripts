@@ -45,7 +45,7 @@ APP_IMAGE_NAME=""
 DOCKERRUN="Dockerrun.aws.json"
 #EBS_EB_EXTENSTION_LOCATION=""
 IMG_WITH_EBS_TAG=""
-EBS_TEMPLATE_SKELETON_FILE="ebs_base_template_v2.json.template"
+EBS_TEMPLATE_SKELETON_FILE="ebs_base_template_v3.json.template"
 EBS_APPLICATION_NAME=""
 EBS_APPVER=""
 EBS_TAG=""
@@ -58,7 +58,8 @@ EBS_TEMPLATE_FILE_NAME=""
 #AWS_EBS_EB_DOCKERRUN_TEMPLATE_LOCATION=$(eval "echo \$${ENV}_AWS_EBS_EB_DOCKERRUN_TEMPLATE_LOCATION")
 #AWS_EBS_DOCKERRUN_TEMPLATE=$(eval "echo \$${ENV}_AWS_EBS_DOCKERRUN_TEMPLATE")
 #AWS_S3_KEY_LOCATION=""
-
+ebsportcount=0
+ebstemplate=""
 #variable for cloud front
 #AWS_S3_BUCKET=""
 #AWS_S3_SOURCE_SYNC_PATH=""
@@ -418,6 +419,22 @@ validate_update_loggroup()
 }
 # EBS integration
 
+ebsportmapping() {
+echo "port map called"
+containerport=$1
+hostport=$2
+
+if [ -z $hostport ]
+then
+ebstemplate=$(echo $ebstemplate | jq --arg containerPort $containerport --arg ebsportcount $ebsportcount '.Ports[$ebsportcount |tonumber] |= .+ { ContainerPort: $containerPort }')
+else
+ebstemplate=$(echo $ebstemplate | jq --arg hostPort $hostport --arg containerPort $containerport --arg ebsportcount $ebsportcount '.Ports[$ebsportcount |tonumber] |= .+ { HostPort: $hostPort, ContainerPort: $containerPort }')
+fi
+
+let ebsportcount=ebsportcount+1
+
+}
+
 
 EBS_push_docker_image() {
 
@@ -432,6 +449,26 @@ creating_updating_ebs_docker_json() {
     echo "updating auth bucket name"
     sed -i.bak -e "s/@AWSS3AUTHBUCKET@/appirio-platform-$ENV_CONFIG/g" $EBS_TEMPLATE_SKELETON_FILE
     rm ${EBS_TEMPLATE_SKELETON_FILE}.bak
+
+    #EBS Port Mapping
+    ebstemplate=$(cat $EBS_TEMPLATE_SKELETON_FILE)
+    if [ -z $AWS_EBS_PORTS ];
+    then
+        echo "No container port is defined. configuring default 8080 port"
+        ebsportmapping 8080
+    else
+        Buffer_portmap=$(echo $AWS_EBS_PORTS | sed 's/,/ /g')
+        for ebsportbuf in $Buffer_portmap;
+        do
+            containerport=$( echo $ebsportbuf | cut -d ':' -f 1 ) 
+            if [[ $ebsportbuf = *:* ]]; then
+                hostport=$( echo $ebsportbuf | cut -d ':' -f 2 ) 
+            fi
+            ebsportmapping $containerport $hostport
+        done
+    fi
+    echo "$ebstemplate" > $EBS_TEMPLATE_SKELETON_FILE
+    log "port mapping updated"    
 
     if [ -z "$EBS_EB_EXTENSTION_LOCATION" ];
     then

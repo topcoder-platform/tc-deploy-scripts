@@ -8,7 +8,9 @@
         "Name": "appiriodevops/@IMAGE@",
         "Update": "true"
     },
-    "Ports": [],
+    "Ports": [{
+        "ContainerPort": "8080"
+    }],
     "Volumes": [],
     "Logging": ""
 }

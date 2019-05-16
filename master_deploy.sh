@@ -41,6 +41,7 @@ template=""
 TEMPLATE_SKELETON_FILE="base_template_v2.json"
 APP_IMAGE_NAME=""
 DEPLOYCATEGORY=""
+ECSCLI_ENVFILE="api.env"
 
 #variable specific to EBS
 DOCKERRUN="Dockerrun.aws.json"
@@ -158,6 +159,27 @@ ECSCLI_push_ecr_image() {
 	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:$ECS_TAG
 	track_error $? "ECS ECR image push"
 	log "Docker Image published."
+}
+#================
+ECSCLI_update_env()
+{
+    Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
+    for listname in $Buffer_seclist;
+    do
+        local o=$IFS
+        IFS=$(echo -en "\n\b")
+        envvars=$( cat $listname.json | jq  -r ' . ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
+        log "vars are fetched"
+
+        for s in $(echo $envvars | jq -c ".[]" ); do
+        #echo $envvars
+            varname=$(echo $s| jq -r ".name")
+            varvalue=$(echo $s| jq -r ".value")
+            envaddition "$varname" "$varvalue"
+            echo "$varname"="\"$varvalue\"" >>$ECSCLI_ENVFILE
+        done
+        IFS=$o  
+    done
 }
 #================
 portmapping() {
@@ -893,6 +915,8 @@ then
                 exit 1
             fi
         fi
+        #env file updation
+        ECSCLI_update_env
         # Configurong cluster
         ecs-cli configure --region us-east-1 --cluster $AWS_ECS_CLUSTER
         # updating service

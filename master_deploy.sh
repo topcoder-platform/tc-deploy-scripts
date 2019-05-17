@@ -40,6 +40,8 @@ volcount=0
 template=""
 TEMPLATE_SKELETON_FILE="base_template_v2.json"
 APP_IMAGE_NAME=""
+DEPLOYCATEGORY=""
+ECSCLI_ENVFILE="api.env"
 
 #variable specific to EBS
 DOCKERRUN="Dockerrun.aws.json"
@@ -140,7 +142,45 @@ ECS_push_ecr_image() {
 	track_error $? "ECS ECR image push"
 	log "Docker Image published."
 }
+#===============
+ECSCLI_push_ecr_image() {
+    ECS_REPONAME=$1
+    IMAGE_NAME=$2
+    if [ -z "$IMAGE_NAME" ];
+    then
+        log "Image has followed standard format"
+    else
+        log "Image does not follow stanard format. Modifying the image and updating the ECS_TAG"
+        docker tag $IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:$CIRCLE_BUILD_NUM
+        ECS_TAG=$CIRCLE_BUILD_NUM
+    fi
+	log "Pushing Docker Image..."
+	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:$ECS_TAG
+	track_error $? "ECS ECR image push"
+	log "Docker Image published."
+}
+#================
+ECSCLI_update_env()
+{
+    Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
+    for listname in $Buffer_seclist;
+    do
+        local o=$IFS
+        IFS=$(echo -en "\n\b")
+        envvars=$( cat $listname.json | jq  -r ' . ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
+        log "vars are fetched"
 
+        for s in $(echo $envvars | jq -c ".[]" ); do
+        #echo $envvars
+            varname=$(echo $s| jq -r ".name")
+            varvalue=$(echo $s| jq -r ".value")
+            envaddition "$varname" "$varvalue"
+            echo "$varname"="\"$varvalue\"" >>$ECSCLI_ENVFILE
+        done
+        IFS=$o  
+    done
+}
 #================
 portmapping() {
 hostport=$1
@@ -633,7 +673,7 @@ deploy_lambda_package()
 # Input Collection and validation
 input_parsing_validation()
 {
-while getopts .d:h:i:e:t:v:s:p:g:c:. OPTION
+while getopts .d:h:i:e:t:v:s:p:g:c:m:. OPTION
 do
      case $OPTION in
          d)
@@ -667,7 +707,9 @@ do
          g)
              SHARED_PROPERTY_FILENAME=$OPTARG
              ;;
-
+         m)
+             DEPLOYCATEGORY=$OPTARG
+             ;;
          ?)
              log "additional param required"
              usage
@@ -719,14 +761,26 @@ download_envfile
 if [ "$DEPLOYMENT_TYPE" == "ECS" ]
 then
   ECS_TAG=$TAG
-  cp $HOME/buildscript/$TEMPLATE_SKELETON_FILE .
+  if [ "$DEPLOYCATEGORY" == "CLI" ]
+    then
+        if [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $ECS_TAG ];
+        then
+            log "Deployment varibale are not updated. Please check tag option has provided. also ensure AWS_REPOSITORY, AWS_ECS_TASK_FAMILY,AWS_ECS_CONTAINER_NAME,AWS_ECS_PORTS,AWS_ECS_CLUSTER and AWS_ECS_SERVICE ariables are configured on secret manager"
+            usage
+            exit 1
+        fi
+        DEPLOYCATEGORYNAME="ECSCLI"
+    else
+        cp $HOME/buildscript/$TEMPLATE_SKELETON_FILE .
 
-  if [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_PORTS ] || [ -z $ECS_TAG ];
-  then
-     log "Deployment varibale are not updated. Please check tag option has provided. also ensure AWS_REPOSITORY, AWS_ECS_TASK_FAMILY,AWS_ECS_CONTAINER_NAME,AWS_ECS_PORTS,AWS_ECS_CLUSTER and AWS_ECS_SERVICE ariables are configured on secret manager"
-     usage
-     exit 1
-  fi
+        if [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_PORTS ] || [ -z $ECS_TAG ];
+        then
+            log "Deployment varibale are not updated. Please check tag option has provided. also ensure AWS_REPOSITORY, AWS_ECS_TASK_FAMILY,AWS_ECS_CONTAINER_NAME,AWS_ECS_PORTS,AWS_ECS_CLUSTER and AWS_ECS_SERVICE ariables are configured on secret manager"
+            usage
+            exit 1
+        fi
+        DEPLOYCATEGORYNAME="AWSCLI"
+    fi
   log "AWS_REPOSITORY           :       $AWS_REPOSITORY"
   log "AWS_ECS_CLUSTER    :       $AWS_ECS_CLUSTER"
   log "AWS_ECS_SERVICE_NAMES  :       $AWS_ECS_SERVICE"
@@ -734,6 +788,7 @@ then
   log "AWS_ECS_CONTAINER_NAME   :       $AWS_ECS_CONTAINER_NAME"
   log "AWS_ECS_PORTS  :       $AWS_ECS_PORTS"
   log "ECS_TAG  :       $ECS_TAG"
+  log "DEPLOY TYPE : $DEPLOYCATEGORYNAME"
 fi
 #EBS parameter validation
 if [ "$DEPLOYMENT_TYPE" == "EBS" ]
@@ -811,29 +866,102 @@ input_parsing_validation $@
 
 if [ "$DEPLOYMENT_TYPE" == "ECS" ]
 then
-    validate_update_loggroup
-	ECS_push_ecr_image
-	ECS_template_create_register
-    echo "value of AWS_ECS_SERVICE " $AWS_ECS_SERVICE
-	AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g')
-    #AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g' | sed 'N;s/\n//')
-    echo "value of AWS_ECS_SERVICE_NAMES " $AWS_ECS_SERVICE_NAMES
-	IFS=' ' read -a AWS_ECS_SERVICES <<< $AWS_ECS_SERVICE_NAMES
-	if [ ${#AWS_ECS_SERVICES[@]} -gt 0 ]; then
-		 echo "${#AWS_ECS_SERVICES[@]} service are going to be updated"
-		 for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
-		 do
-		   echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
-		   ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
-		   check_service_status "$AWS_ECS_SERVICE_NAME"
-		   #echo $REVISION
-		 done
-	else
-		 echo "Kindly check the service name in Parameter"
-		 usage
-		 exit 1
+    if [ "$DEPLOYCATEGORY" == "CLI" ]
+    then
+        eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+        #Moving image to repository
+        if [ -z $APP_IMAGE_NAME ];
+        then
+            echo "value of AWS_REPOSITORY " $AWS_REPOSITORY
+            AWS_REPOSITORY_NAMES=$(echo ${AWS_REPOSITORY} | sed 's/,/ /g')
+            echo "value of AWS_REPOSITORY_NAMES " $AWS_REPOSITORY_NAMES
+            IFS=' ' read -a AWS_REPOSITORY_NAMES_ARRAY <<< $AWS_REPOSITORY_NAMES
+            if [ ${#AWS_REPOSITORY_NAMES_ARRAY[@]} -gt 0 ]; then
+                echo "${#AWS_REPOSITORY_NAMES_ARRAY[@]} repo push initalisation"
+                for AWS_ECS_REPO_NAME in "${AWS_REPOSITORY_NAMES_ARRAY[@]}"
+                do
+                    echo "updating reposioty - $AWS_ECS_REPO_NAME"
+                    ECSCLI_push_ecr_image $AWS_ECS_REPO_NAME
+                    #echo $REVISION
+                done
+            else
+                echo "Kindly check the Repository name has Parameter"
+                usage
+                exit 1
+            fi
+        else
+        #if appp images details are provided
+
+            echo "value of AWS_REPOSITORY " $AWS_REPOSITORY
+            AWS_REPOSITORY_NAMES=$(echo ${AWS_REPOSITORY} | sed 's/,/ /g')
+            echo "value of AWS_REPOSITORY_NAMES " $AWS_REPOSITORY_NAMES
+            echo "value of image name provided " $APP_IMAGE_NAME
+            APP_IMAGE_NAMES=$(echo ${APP_IMAGE_NAME} | sed 's/,/ /g')
+            IFS=' ' read -a AWS_REPOSITORY_NAMES_ARRAY <<< $AWS_REPOSITORY_NAMES
+            IFS=' ' read -a APP_IMAGE_NAMES_ARRAY <<< $APP_IMAGE_NAMES
+            echo "AWS REPO COUNT NEED TO BE UPDATE ${#AWS_REPOSITORY_NAMES_ARRAY[@]} , APP image count provided in option ${#APP_IMAGE_NAMES_ARRAY[@]} "
+            if [ "${#AWS_REPOSITORY_NAMES_ARRAY[@]}" = "${#APP_IMAGE_NAMES_ARRAY[@]}" ];
+            then
+                ecstempcount=0
+                while [ $ecstempcount -lt ${#AWS_REPOSITORY_NAMES_ARRAY[@]} ]
+                do
+                    echo "${AWS_REPOSITORY_NAMES_ARRAY[$count]} , ${APP_IMAGE_NAMES_ARRAY[$count]}"
+                    ECSCLI_push_ecr_image "${AWS_REPOSITORY_NAMES_ARRAY[$count]}" "${APP_IMAGE_NAMES_ARRAY[$count]}"
+                    ecstempcount=`expr $ecstempcount + 1`
+                done
+            else
+                echo "Kindly check the image name in Parameter"
+                usage
+                exit 1
+            fi
+        fi
+        #env file updation
+        ECSCLI_update_env
+        # Configurong cluster
+        ecs-cli configure --region us-east-1 --cluster $AWS_ECS_CLUSTER
+        # updating service
+        echo "value of AWS_ECS_SERVICE " $AWS_ECS_SERVICE
+        AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g')
+        #AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g' | sed 'N;s/\n//')
+        echo "value of AWS_ECS_SERVICE_NAMES " $AWS_ECS_SERVICE_NAMES
+        IFS=' ' read -a AWS_ECS_SERVICES <<< $AWS_ECS_SERVICE_NAMES
+        if [ ${#AWS_ECS_SERVICES[@]} -gt 0 ]; then
+            echo "${#AWS_ECS_SERVICES[@]} service are going to be updated"
+            for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
+            do
+            echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
+            ecs-cli compose --project-name "$AWS_ECS_SERVICE_NAME" service up
+            #echo $REVISION
+            done
+        else
+            echo "Kindly check the service name in Parameter"
+            usage
+            exit 1
+        fi
+    else
+        validate_update_loggroup
+        ECS_push_ecr_image
+        ECS_template_create_register
+        echo "value of AWS_ECS_SERVICE " $AWS_ECS_SERVICE
+        AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g')
+        #AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g' | sed 'N;s/\n//')
+        echo "value of AWS_ECS_SERVICE_NAMES " $AWS_ECS_SERVICE_NAMES
+        IFS=' ' read -a AWS_ECS_SERVICES <<< $AWS_ECS_SERVICE_NAMES
+        if [ ${#AWS_ECS_SERVICES[@]} -gt 0 ]; then
+            echo "${#AWS_ECS_SERVICES[@]} service are going to be updated"
+            for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
+            do
+            echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
+            ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
+            check_service_status "$AWS_ECS_SERVICE_NAME"
+            #echo $REVISION
+            done
+        else
+            echo "Kindly check the service name in Parameter"
+            usage
+            exit 1
+        fi
 	fi
-	
 fi
 
 

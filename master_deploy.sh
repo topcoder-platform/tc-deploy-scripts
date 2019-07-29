@@ -283,6 +283,16 @@ else
 fi
 log "Memory reservation updated"
 
+#Container Memory reservation
+if [ -z $AWS_ECS_CONTAINER_CPU ];
+then
+    echo "No  cpu defined . Going with default value 100"
+    AWS_ECS_CONTAINER_CPU=100
+    template=$(echo $template | jq --argjson cpu $AWS_ECS_CONTAINER_CPU '.containerDefinitions[0].cpu=$cpu')
+else
+    template=$(echo $template | jq --argjson cpu $AWS_ECS_CONTAINER_CPU '.containerDefinitions[0].cpu=$cpu')
+fi
+
 #Port Mapping
 Buffer_portmap=$(echo $AWS_ECS_PORTS | sed 's/,/ /g')
 for b1 in $Buffer_portmap;
@@ -379,15 +389,6 @@ else
     #CONTAINER_CPU
     ECS_NETWORKTYPE="bridge"
     template=$(echo $template | jq --arg networkMode $ECS_NETWORKTYPE '.networkMode=$networkMode')
-    #Container Memory reservation
-    if [ -z $AWS_ECS_CONTAINER_CPU ];
-    then
-      echo "No  cpu defined . Going with default value 100"
-      AWS_ECS_CONTAINER_CPU=100
-      template=$(echo $template | jq --argjson cpu $AWS_ECS_CONTAINER_CPU '.containerDefinitions[0].cpu=$cpu')
-    else 
-      template=$(echo $template | jq --argjson cpu $AWS_ECS_CONTAINER_CPU '.containerDefinitions[0].cpu=$cpu')
-    fi
     
     # Updating the compatibiltiy
     template=$(echo $template | jq --arg requiresCompatibilities EC2 '.requiresCompatibilities[0] =  $requiresCompatibilities')

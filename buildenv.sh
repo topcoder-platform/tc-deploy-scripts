@@ -48,7 +48,7 @@ uploading_buildenvvar()
             varname=$(echo $s| jq -r ".name")
             varvalue=$(echo $s| jq -r ".value")
             echo $varname
-            echo export "$varname"="\"$varvalue\"" >>"buildenvvar"
+            echo export "$varname"="'$varvalue'" >>"buildenvvar"
 	        #export "$varname"="$varvalue"
             #echo export "$varname"="$varvalue" >>"$BASH_ENV"
             #echo export "$varname"="\"$varvalue\"" >> ~/.circlerc

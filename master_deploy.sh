@@ -580,7 +580,7 @@ deploy_s3bucket() {
 	eval "aws s3 sync --dryrun $AWS_S3_SOURCE_SYNC_PATH s3://${AWS_S3_BUCKET} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"
 	result=`eval "aws s3 sync $AWS_S3_SOURCE_SYNC_PATH s3://${AWS_S3_BUCKET} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"`
 	if [ $? -eq 0 ]; then
-		echo "All txt, css, and js files are Deployed! with gzip"
+		echo "All txt, css, and js files are Deployed!"
 	else
 		echo "Deployment Failed  - $result"
 		exit 1

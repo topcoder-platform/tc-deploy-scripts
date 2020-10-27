@@ -569,16 +569,34 @@ deploy_s3bucket() {
 		exit 1
 	fi
 
-	S3_OPTIONS="--exclude '*' --include '*.txt' --include '*.js' --include '*.css' --content-encoding gzip"
-	echo aws s3 sync --dryrun $AWS_S3_SOURCE_SYNC_PATH s3://${AWS_S3_BUCKET} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}
-	eval "aws s3 sync --dryrun $AWS_S3_SOURCE_SYNC_PATH s3://${AWS_S3_BUCKET} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"
-	result=`eval "aws s3 sync $AWS_S3_SOURCE_SYNC_PATH s3://${AWS_S3_BUCKET} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"`
-	if [ $? -eq 0 ]; then
-		echo "All txt, css, and js files are Deployed! with gzip"
-	else
-		echo "Deployment Failed  - $result"
-		exit 1
-	fi
+	# S3_OPTIONS="--exclude '*' --include '*.txt' --include '*.js' --include '*.css' --content-encoding gzip"
+    searchpath=${AWS_S3_SOURCE_SYNC_PATH}
+    lengthofsearchpath=$(echo ${#searchpath}) 
+    lengthofsearchpath=$((lengthofsearchpath+1))
+	for syncfilepath in $(find ${searchpath} -name '*.js' -o -name '*.txt' -o -name '*.css'); 
+	do 
+	  echo "$syncfilepath"
+      uploadpath=$(echo $syncfilepath | cut -b ${lengthofsearchpath}-)
+      echo $uploadpath
+	  getformatdetails=$(file ${syncfilepath})
+	  if [[ $getformatdetails == *"ASCII"* ]] || [[ $getformatdetails == *"empty"* ]]; 
+	  then
+        echo "file format is ASCII adn skipping gzip option"
+    	S3_OPTIONS=""
+      else 
+        echo $getformatdetails
+        S3_OPTIONS="--content-encoding gzip"
+      fi
+      echo aws s3 cp --dryrun $syncfilepath s3://${AWS_S3_BUCKET}${uploadpath} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}
+      eval "aws s3 cp --dryrun $syncfilepath s3://${AWS_S3_BUCKET}${uploadpath} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"
+	  result=`eval "aws s3 cp $syncfilepath s3://${AWS_S3_BUCKET}${uploadpath} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"`
+      if [ $? -eq 0 ]; then
+    	echo "file Deployed!"
+      else
+	    echo "Deployment Failed  - $result"
+  	    exit 1
+	  fi
+    done;
 }
 download_envfile()
 {

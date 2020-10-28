@@ -581,7 +581,7 @@ deploy_s3bucket() {
 	  getformatdetails=$(file ${syncfilepath})
 	  if [[ $getformatdetails == *"ASCII"* ]] || [[ $getformatdetails == *"empty"* ]]; 
 	  then
-        echo "file format is ASCII adn skipping gzip option"
+        echo "file format is ASCII and skipping gzip option"
     	S3_OPTIONS=""
       else 
         echo $getformatdetails

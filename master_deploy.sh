@@ -949,7 +949,14 @@ then
             for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
             do
             echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
+            if [ -z $AWS_ECS_TASK_ROLE_ARN ];
+            then
+            log "No Execution Role defined"
             ecs-cli compose --project-name "$AWS_ECS_SERVICE_NAME" service up
+            else
+            ECS_COMPOSE_TASK_ROLE="arn:aws:iam::$AWS_ACCOUNT_ID:role/$AWS_ECS_TASK_ROLE_ARN"
+            ecs-cli compose --project-name "$AWS_ECS_SERVICE_NAME" --task-role-arn "$ECS_COMPOSE_TASK_ROLE" service up
+            fi
             #echo $REVISION
             done
         else

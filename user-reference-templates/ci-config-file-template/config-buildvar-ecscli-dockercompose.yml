@@ -1,0 +1,89 @@
+version: 2
+defaults: &defaults
+    docker:
+      - image: circleci/python:2.7-stretch-browsers
+install_dependency: &install_dependency
+  name: Installation of build and deployment dependencies.
+  command: |
+    sudo apt install jq
+    sudo pip install awscli --upgrade
+    sudo pip install docker-compose
+    sudo curl -o /usr/local/bin/ecs-cli https://s3.amazonaws.com/amazon-ecs-cli/ecs-cli-linux-amd64-latest  
+    sudo chmod +x /usr/local/bin/ecs-cli
+install_deploysuite: &install_deploysuite
+  name: Installation of install_deploysuite.
+  command: |
+    git clone --branch dev_compose_bugfix https://github.com/topcoder-platform/tc-deploy-scripts ../buildscript
+    cp ./../buildscript/master_deploy.sh .
+    cp ./../buildscript/buildenv.sh .
+    cp ./../buildscript/awsconfiguration.sh .
+restore_cache_settings_for_build: &restore_cache_settings_for_build
+  key: docker-node-modules-{{ checksum "package-lock.json" }}
+
+save_cache_settings: &save_cache_settings
+  key: docker-node-modules-{{ checksum "package-lock.json" }}
+  paths:
+    - node_modules
+
+builddeploy_steps: &builddeploy_steps
+      - checkout
+      - setup_remote_docker
+      - run: *install_dependency
+      - run: *install_deploysuite
+      - run:
+          name: Setting env details and running build
+          command: |
+            ./awsconfiguration.sh $DEPLOY_ENV
+            source awsenvconf
+            ./buildenv.sh -e $DEPLOY_ENV -b ${LOGICAL_ENV}-${APPNAME}-buildvar
+            ./buildenv.sh -e $DEPLOY_ENV -b ${LOGICAL_ENV}-${APPNAME}-deployvar
+            source buildenvvar
+            ./build.sh
+      - deploy:
+          name: Running MasterScript.
+          command: |
+            source awsenvconf
+            source buildenvvar
+            # ./build.sh
+            ./master_deploy.sh -d ECS -e $DEPLOY_ENV -m CLI -t $CIRCLE_BUILD_NUM
+
+jobs:
+  # Build & Deploy against development backend 
+  "build-dev":
+    <<: *defaults
+    environment:
+      DEPLOY_ENV: "DEV"
+      LOGICAL_ENV: "dev"
+      APPNAME: "application-name"    
+    steps: *builddeploy_steps
+
+  "build-prod":
+    <<: *defaults
+    environment:
+      DEPLOY_ENV: "PROD"
+      LOGICAL_ENV: "prod"    
+      APPNAME: "application-name"  
+    steps: *builddeploy_steps
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      # Development builds are executed on "develop" branch only.
+      - "build-dev":
+          context : org-global
+          filters:
+            branches:
+              only:
+                - dev
+                - dynamodb
+
+      # Production builds are exectuted only on tagged commits to the
+      # master branch.
+      - "build-prod":
+          context : org-global
+          filters:
+            branches:
+              only: 
+                - master
+                - masterv1

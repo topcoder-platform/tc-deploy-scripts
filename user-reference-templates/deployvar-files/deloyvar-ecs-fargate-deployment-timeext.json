@@ -1,0 +1,9 @@
+{
+    "AWS_ECS_CLUSTER": "clustername",
+    "AWS_ECS_SERVICE": "servicename",
+    "AWS_ECS_TASK_FAMILY": "taskfamilyname",
+    "AWS_ECS_CONTAINER_NAME": "containername",
+    "AWS_ECS_PORTS": "3000:3000:TCP",
+    "AWS_REPOSITORY": "repositoryname",
+    "COUNTER_LIMIT": "12"
+}

@@ -579,7 +579,7 @@ deploy_s3bucket() {
       uploadpath=$(echo $syncfilepath | cut -b ${lengthofsearchpath}-)
       echo $uploadpath
 	  getformatdetails=$(file ${syncfilepath})
-	  if [[ $getformatdetails == *"ASCII"* ]] || [[ $getformatdetails == *"empty"* ]]; 
+	  if [[ $getformatdetails == *"ASCII"* ]] || [[ $getformatdetails == *"UTF"* ]] || [[ $getformatdetails == *"empty"* ]]; 
 	  then
         echo "file format is ASCII and skipping gzip option"
     	S3_OPTIONS=""

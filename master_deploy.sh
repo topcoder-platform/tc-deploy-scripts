@@ -10,13 +10,18 @@ SECRET_FILE_NAME="./buildsecvar.conf"
 SHARED_PROPERTY_FILENAME=""
 
 #Common Varibles
-AWS_ACCESS_KEY_ID=""
-AWS_SECRET_ACCESS_KEY=""
-AWS_ACCOUNT_ID=""
-AWS_REGION=""
+#echo $AWS_ACCESS_KEY_ID
+# AWS_ACCESS_KEY_ID=""
+# AWS_SECRET_ACCESS_KEY=""
+# AWS_ACCOUNT_ID=""
+# AWS_REGION=""
 TAG=""
 SEC_LIST=""
-COUNTER_LIMIT=12
+#COUNTER_LIMIT=12
+
+if [ -z "$COUNTER_LIMIT" ]; then
+        COUNTER_LIMIT=12
+fi
 
 #Varibles specific to ECS
 #AWS_REPOSITORY=""
@@ -35,12 +40,14 @@ volcount=0
 template=""
 TEMPLATE_SKELETON_FILE="base_template_v2.json"
 APP_IMAGE_NAME=""
+DEPLOYCATEGORY=""
+ECSCLI_ENVFILE="api.env"
 
 #variable specific to EBS
 DOCKERRUN="Dockerrun.aws.json"
 #EBS_EB_EXTENSTION_LOCATION=""
 IMG_WITH_EBS_TAG=""
-EBS_TEMPLATE_SKELETON_FILE="ebs_base_template_v1.json.template"
+EBS_TEMPLATE_SKELETON_FILE="ebs_base_template_v3.json.template"
 EBS_APPLICATION_NAME=""
 EBS_APPVER=""
 EBS_TAG=""
@@ -53,15 +60,16 @@ EBS_TEMPLATE_FILE_NAME=""
 #AWS_EBS_EB_DOCKERRUN_TEMPLATE_LOCATION=$(eval "echo \$${ENV}_AWS_EBS_EB_DOCKERRUN_TEMPLATE_LOCATION")
 #AWS_EBS_DOCKERRUN_TEMPLATE=$(eval "echo \$${ENV}_AWS_EBS_DOCKERRUN_TEMPLATE")
 #AWS_S3_KEY_LOCATION=""
-
+ebsportcount=0
+ebstemplate=""
 #variable for cloud front
 #AWS_S3_BUCKET=""
 #AWS_S3_SOURCE_SYNC_PATH=""
 CFCACHE="true"
 
 #variable for Lambda 
-AWS_LAMBDA_DEPLOY_TYPE=""
-AWS_LAMBDA_STAGE=""
+#AWS_LAMBDA_DEPLOY_TYPE=""
+#AWS_LAMBDA_STAGE=""
 
 #FUNCTIONS
 #usage Function - provides information like how to execute the script
@@ -134,7 +142,45 @@ ECS_push_ecr_image() {
 	track_error $? "ECS ECR image push"
 	log "Docker Image published."
 }
+#===============
+ECSCLI_push_ecr_image() {
+    ECS_REPONAME=$1
+    IMAGE_NAME=$2
+    if [ -z "$IMAGE_NAME" ];
+    then
+        log "Image has followed standard format"
+    else
+        log "Image does not follow stanard format. Modifying the image and updating the ECS_TAG"
+        docker tag $IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:$CIRCLE_BUILD_NUM
+        ECS_TAG=$CIRCLE_BUILD_NUM
+    fi
+	log "Pushing Docker Image..."
+	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:$ECS_TAG
+	track_error $? "ECS ECR image push"
+	log "Docker Image published."
+}
+#================
+ECSCLI_update_env()
+{
+    Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
+    for listname in $Buffer_seclist;
+    do
+        local o=$IFS
+        IFS=$(echo -en "\n\b")
+        envvars=$( cat $listname.json | jq  -r ' . ' | jq ' . | to_entries[] | { "name": .key , "value": .value } ' | jq -s . )
+        log "vars are fetched"
 
+        for s in $(echo $envvars | jq -c ".[]" ); do
+        #echo $envvars
+            varname=$(echo $s| jq -r ".name")
+            varvalue=$(echo $s| jq -r ".value")
+            envaddition "$varname" "$varvalue"
+            echo "$varname"="\"$varvalue\"" >>$ECSCLI_ENVFILE
+        done
+        IFS=$o  
+    done
+}
 #================
 portmapping() {
 hostport=$1
@@ -209,8 +255,13 @@ template=$(cat $TEMPLATE_SKELETON_FILE)
 template=$(echo $template | jq --arg family $AWS_ECS_TASK_FAMILY '.family=$family')
 log "Family updated"
 
-#taskrole and excution role has updated 
-#template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.taskRoleArn=$taskRoleArn')
+#taskrole and excution role has updated
+if [ -z $AWS_ECS_TASK_ROLE_ARN ];
+then
+  log "No Execution Role defined"
+else
+  template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/$AWS_ECS_TASK_ROLE_ARN '.taskRoleArn=$taskRoleArn')
+fi
 #template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.executionRoleArn=$executionRoleArn')
 
 #Container Name update
@@ -231,6 +282,16 @@ else
   template=$(echo $template | jq --argjson memoryReservation $AWS_ECS_CONTAINER_MEMORY_RESERVATION '.containerDefinitions[0].memoryReservation=$memoryReservation')
 fi
 log "Memory reservation updated"
+
+#Container Memory reservation
+if [ -z $AWS_ECS_CONTAINER_CPU ];
+then
+    echo "No  cpu defined . Going with default value 100"
+    AWS_ECS_CONTAINER_CPU=100
+    template=$(echo $template | jq --argjson cpu $AWS_ECS_CONTAINER_CPU '.containerDefinitions[0].cpu=$cpu')
+else
+    template=$(echo $template | jq --argjson cpu $AWS_ECS_CONTAINER_CPU '.containerDefinitions[0].cpu=$cpu')
+fi
 
 #Port Mapping
 Buffer_portmap=$(echo $AWS_ECS_PORTS | sed 's/,/ /g')
@@ -328,15 +389,6 @@ else
     #CONTAINER_CPU
     ECS_NETWORKTYPE="bridge"
     template=$(echo $template | jq --arg networkMode $ECS_NETWORKTYPE '.networkMode=$networkMode')
-    #Container Memory reservation
-    if [ -z $AWS_ECS_CONTAINER_CPU ];
-    then
-      echo "No  cpu defined . Going with default value 100"
-      AWS_ECS_CONTAINER_CPU=100
-      template=$(echo $template | jq --argjson cpu $AWS_ECS_CONTAINER_CPU '.containerDefinitions[0].cpu=$cpu')
-    else 
-      template=$(echo $template | jq --argjson cpu $AWS_ECS_CONTAINER_CPU '.containerDefinitions[0].cpu=$cpu')
-    fi
     
     # Updating the compatibiltiy
     template=$(echo $template | jq --arg requiresCompatibilities EC2 '.requiresCompatibilities[0] =  $requiresCompatibilities')
@@ -408,6 +460,22 @@ validate_update_loggroup()
 }
 # EBS integration
 
+ebsportmapping() {
+echo "port map called"
+containerport=$1
+hostport=$2
+
+if [ -z $hostport ]
+then
+ebstemplate=$(echo $ebstemplate | jq --arg containerPort $containerport --arg ebsportcount $ebsportcount '.Ports[$ebsportcount |tonumber] |= .+ { ContainerPort: $containerPort }')
+else
+ebstemplate=$(echo $ebstemplate | jq --arg hostPort $hostport --arg containerPort $containerport --arg ebsportcount $ebsportcount '.Ports[$ebsportcount |tonumber] |= .+ { HostPort: $hostPort, ContainerPort: $containerPort }')
+fi
+
+let ebsportcount=ebsportcount+1
+
+}
+
 
 EBS_push_docker_image() {
 
@@ -419,6 +487,29 @@ track_error $? "docker push failed."
 }
 
 creating_updating_ebs_docker_json() {
+    echo "updating auth bucket name"
+    sed -i.bak -e "s/@AWSS3AUTHBUCKET@/appirio-platform-$ENV_CONFIG/g" $EBS_TEMPLATE_SKELETON_FILE
+    rm ${EBS_TEMPLATE_SKELETON_FILE}.bak
+
+    #EBS Port Mapping
+    ebstemplate=$(cat $EBS_TEMPLATE_SKELETON_FILE)
+    if [ -z $AWS_EBS_PORTS ];
+    then
+        echo "No container port is defined. configuring default 8080 port"
+        ebsportmapping 8080
+    else
+        Buffer_portmap=$(echo $AWS_EBS_PORTS | sed 's/,/ /g')
+        for ebsportbuf in $Buffer_portmap;
+        do
+            containerport=$( echo $ebsportbuf | cut -d ':' -f 1 ) 
+            if [[ $ebsportbuf = *:* ]]; then
+                hostport=$( echo $ebsportbuf | cut -d ':' -f 2 ) 
+            fi
+            ebsportmapping $containerport $hostport
+        done
+    fi
+    echo "$ebstemplate" > $EBS_TEMPLATE_SKELETON_FILE
+    log "port mapping updated"    
 
     if [ -z "$EBS_EB_EXTENSTION_LOCATION" ];
     then
@@ -478,16 +569,34 @@ deploy_s3bucket() {
 		exit 1
 	fi
 
-	S3_OPTIONS="--exclude '*' --include '*.txt' --include '*.js' --include '*.css' --content-encoding gzip"
-	echo aws s3 sync --dryrun $AWS_S3_SOURCE_SYNC_PATH s3://${AWS_S3_BUCKET} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}
-	eval "aws s3 sync --dryrun $AWS_S3_SOURCE_SYNC_PATH s3://${AWS_S3_BUCKET} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"
-	result=`eval "aws s3 sync $AWS_S3_SOURCE_SYNC_PATH s3://${AWS_S3_BUCKET} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"`
-	if [ $? -eq 0 ]; then
-		echo "All txt, css, and js files are Deployed! with gzip"
-	else
-		echo "Deployment Failed  - $result"
-		exit 1
-	fi
+	# S3_OPTIONS="--exclude '*' --include '*.txt' --include '*.js' --include '*.css' --content-encoding gzip"
+    searchpath=${AWS_S3_SOURCE_SYNC_PATH}
+    lengthofsearchpath=$(echo ${#searchpath}) 
+    lengthofsearchpath=$((lengthofsearchpath+1))
+	for syncfilepath in $(find ${searchpath} -name '*.js' -o -name '*.txt' -o -name '*.css'); 
+	do 
+	  echo "$syncfilepath"
+      uploadpath=$(echo $syncfilepath | cut -b ${lengthofsearchpath}-)
+      echo $uploadpath
+	  getformatdetails=$(file ${syncfilepath})
+	  if [[ $getformatdetails == *"ASCII"* ]] || [[ $getformatdetails == *"empty"* ]]; 
+	  then
+        echo "file format is ASCII and skipping gzip option"
+    	S3_OPTIONS=""
+      else 
+        echo $getformatdetails
+        S3_OPTIONS="--content-encoding gzip"
+      fi
+      echo aws s3 cp --dryrun $syncfilepath s3://${AWS_S3_BUCKET}${uploadpath} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}
+      eval "aws s3 cp --dryrun $syncfilepath s3://${AWS_S3_BUCKET}${uploadpath} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"
+	  result=`eval "aws s3 cp $syncfilepath s3://${AWS_S3_BUCKET}${uploadpath} ${S3_CACHE_OPTIONS} ${S3_OPTIONS}"`
+      if [ $? -eq 0 ]; then
+    	echo "file Deployed!"
+      else
+	    echo "Deployment Failed  - $result"
+  	    exit 1
+	  fi
+    done;
 }
 download_envfile()
 {
@@ -583,7 +692,7 @@ deploy_lambda_package()
 # Input Collection and validation
 input_parsing_validation()
 {
-while getopts .d:h:i:e:t:v:s:p:g:c:. OPTION
+while getopts .d:h:i:e:t:v:s:p:g:c:m:. OPTION
 do
      case $OPTION in
          d)
@@ -617,7 +726,9 @@ do
          g)
              SHARED_PROPERTY_FILENAME=$OPTARG
              ;;
-
+         m)
+             DEPLOYCATEGORY=$OPTARG
+             ;;
          ?)
              log "additional param required"
              usage
@@ -643,19 +754,19 @@ ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 
 #Getting Deployment varaible only
 
-AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
-AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
-AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
-if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] || [ -z $AWS_ACCOUNT_ID ] || [ -z $AWS_REGION ];
-then
-     log "AWS Secret Parameters are not configured in circleci/environment"
-     usage
-     exit 1
-else
-     configure_aws_cli
-     #aws configure list
-fi
+# AWS_ACCESS_KEY_ID=$(eval "echo \$${ENV}_AWS_ACCESS_KEY_ID")
+# AWS_SECRET_ACCESS_KEY=$(eval "echo \$${ENV}_AWS_SECRET_ACCESS_KEY")
+# AWS_ACCOUNT_ID=$(eval "echo \$${ENV}_AWS_ACCOUNT_ID")
+# AWS_REGION=$(eval "echo \$${ENV}_AWS_REGION")
+# if [ -z $AWS_ACCESS_KEY_ID ] || [ -z $AWS_SECRET_ACCESS_KEY ] || [ -z $AWS_ACCOUNT_ID ] || [ -z $AWS_REGION ];
+# then
+#      log "AWS Secret Parameters are not configured in circleci/environment"
+#      usage
+#      exit 1
+# else
+#      configure_aws_cli
+#      #aws configure list
+# fi
 
 download_envfile
 #decrypt_fileenc
@@ -669,14 +780,26 @@ download_envfile
 if [ "$DEPLOYMENT_TYPE" == "ECS" ]
 then
   ECS_TAG=$TAG
-  cp $HOME/buildscript/$TEMPLATE_SKELETON_FILE .
+  if [ "$DEPLOYCATEGORY" == "CLI" ]
+    then
+        if [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $ECS_TAG ];
+        then
+            log "Deployment varibale are not updated. Please check tag option has provided. also ensure AWS_REPOSITORY, AWS_ECS_TASK_FAMILY,AWS_ECS_CONTAINER_NAME,AWS_ECS_PORTS,AWS_ECS_CLUSTER and AWS_ECS_SERVICE ariables are configured on secret manager"
+            usage
+            exit 1
+        fi
+        DEPLOYCATEGORYNAME="ECSCLI"
+    else
+        cp $HOME/buildscript/$TEMPLATE_SKELETON_FILE .
 
-  if [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_PORTS ] || [ -z $ECS_TAG ];
-  then
-     log "Deployment varibale are not updated. Please check tag option has provided. also ensure AWS_REPOSITORY, AWS_ECS_TASK_FAMILY,AWS_ECS_CONTAINER_NAME,AWS_ECS_PORTS,AWS_ECS_CLUSTER and AWS_ECS_SERVICE ariables are configured on secret manager"
-     usage
-     exit 1
-  fi
+        if [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_PORTS ] || [ -z $ECS_TAG ];
+        then
+            log "Deployment varibale are not updated. Please check tag option has provided. also ensure AWS_REPOSITORY, AWS_ECS_TASK_FAMILY,AWS_ECS_CONTAINER_NAME,AWS_ECS_PORTS,AWS_ECS_CLUSTER and AWS_ECS_SERVICE ariables are configured on secret manager"
+            usage
+            exit 1
+        fi
+        DEPLOYCATEGORYNAME="AWSCLI"
+    fi
   log "AWS_REPOSITORY           :       $AWS_REPOSITORY"
   log "AWS_ECS_CLUSTER    :       $AWS_ECS_CLUSTER"
   log "AWS_ECS_SERVICE_NAMES  :       $AWS_ECS_SERVICE"
@@ -684,6 +807,7 @@ then
   log "AWS_ECS_CONTAINER_NAME   :       $AWS_ECS_CONTAINER_NAME"
   log "AWS_ECS_PORTS  :       $AWS_ECS_PORTS"
   log "ECS_TAG  :       $ECS_TAG"
+  log "DEPLOY TYPE : $DEPLOYCATEGORYNAME"
 fi
 #EBS parameter validation
 if [ "$DEPLOYMENT_TYPE" == "EBS" ]
@@ -761,29 +885,102 @@ input_parsing_validation $@
 
 if [ "$DEPLOYMENT_TYPE" == "ECS" ]
 then
-    validate_update_loggroup
-	ECS_push_ecr_image
-	ECS_template_create_register
-    echo "value of AWS_ECS_SERVICE " $AWS_ECS_SERVICE
-	AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g')
-    #AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g' | sed 'N;s/\n//')
-    echo "value of AWS_ECS_SERVICE_NAMES " $AWS_ECS_SERVICE_NAMES
-	IFS=' ' read -a AWS_ECS_SERVICES <<< $AWS_ECS_SERVICE_NAMES
-	if [ ${#AWS_ECS_SERVICES[@]} -gt 0 ]; then
-		 echo "${#AWS_ECS_SERVICES[@]} service are going to be updated"
-		 for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
-		 do
-		   echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
-		   ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
-		   check_service_status "$AWS_ECS_SERVICE_NAME"
-		   #echo $REVISION
-		 done
-	else
-		 echo "Kindly check the service name in Parameter"
-		 usage
-		 exit 1
+    if [ "$DEPLOYCATEGORY" == "CLI" ]
+    then
+        eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+        #Moving image to repository
+        if [ -z $APP_IMAGE_NAME ];
+        then
+            echo "value of AWS_REPOSITORY " $AWS_REPOSITORY
+            AWS_REPOSITORY_NAMES=$(echo ${AWS_REPOSITORY} | sed 's/,/ /g')
+            echo "value of AWS_REPOSITORY_NAMES " $AWS_REPOSITORY_NAMES
+            IFS=' ' read -a AWS_REPOSITORY_NAMES_ARRAY <<< $AWS_REPOSITORY_NAMES
+            if [ ${#AWS_REPOSITORY_NAMES_ARRAY[@]} -gt 0 ]; then
+                echo "${#AWS_REPOSITORY_NAMES_ARRAY[@]} repo push initalisation"
+                for AWS_ECS_REPO_NAME in "${AWS_REPOSITORY_NAMES_ARRAY[@]}"
+                do
+                    echo "updating reposioty - $AWS_ECS_REPO_NAME"
+                    ECSCLI_push_ecr_image $AWS_ECS_REPO_NAME
+                    #echo $REVISION
+                done
+            else
+                echo "Kindly check the Repository name has Parameter"
+                usage
+                exit 1
+            fi
+        else
+        #if appp images details are provided
+
+            echo "value of AWS_REPOSITORY " $AWS_REPOSITORY
+            AWS_REPOSITORY_NAMES=$(echo ${AWS_REPOSITORY} | sed 's/,/ /g')
+            echo "value of AWS_REPOSITORY_NAMES " $AWS_REPOSITORY_NAMES
+            echo "value of image name provided " $APP_IMAGE_NAME
+            APP_IMAGE_NAMES=$(echo ${APP_IMAGE_NAME} | sed 's/,/ /g')
+            IFS=' ' read -a AWS_REPOSITORY_NAMES_ARRAY <<< $AWS_REPOSITORY_NAMES
+            IFS=' ' read -a APP_IMAGE_NAMES_ARRAY <<< $APP_IMAGE_NAMES
+            echo "AWS REPO COUNT NEED TO BE UPDATE ${#AWS_REPOSITORY_NAMES_ARRAY[@]} , APP image count provided in option ${#APP_IMAGE_NAMES_ARRAY[@]} "
+            if [ "${#AWS_REPOSITORY_NAMES_ARRAY[@]}" = "${#APP_IMAGE_NAMES_ARRAY[@]}" ];
+            then
+                ecstempcount=0
+                while [ $ecstempcount -lt ${#AWS_REPOSITORY_NAMES_ARRAY[@]} ]
+                do
+                    echo "${AWS_REPOSITORY_NAMES_ARRAY[$count]} , ${APP_IMAGE_NAMES_ARRAY[$count]}"
+                    ECSCLI_push_ecr_image "${AWS_REPOSITORY_NAMES_ARRAY[$count]}" "${APP_IMAGE_NAMES_ARRAY[$count]}"
+                    ecstempcount=`expr $ecstempcount + 1`
+                done
+            else
+                echo "Kindly check the image name in Parameter"
+                usage
+                exit 1
+            fi
+        fi
+        #env file updation
+        ECSCLI_update_env
+        # Configurong cluster
+        ecs-cli configure --region us-east-1 --cluster $AWS_ECS_CLUSTER
+        # updating service
+        echo "value of AWS_ECS_SERVICE " $AWS_ECS_SERVICE
+        AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g')
+        #AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g' | sed 'N;s/\n//')
+        echo "value of AWS_ECS_SERVICE_NAMES " $AWS_ECS_SERVICE_NAMES
+        IFS=' ' read -a AWS_ECS_SERVICES <<< $AWS_ECS_SERVICE_NAMES
+        if [ ${#AWS_ECS_SERVICES[@]} -gt 0 ]; then
+            echo "${#AWS_ECS_SERVICES[@]} service are going to be updated"
+            for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
+            do
+            echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
+            ecs-cli compose --project-name "$AWS_ECS_SERVICE_NAME" service up
+            #echo $REVISION
+            done
+        else
+            echo "Kindly check the service name in Parameter"
+            usage
+            exit 1
+        fi
+    else
+        validate_update_loggroup
+        ECS_push_ecr_image
+        ECS_template_create_register
+        echo "value of AWS_ECS_SERVICE " $AWS_ECS_SERVICE
+        AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g')
+        #AWS_ECS_SERVICE_NAMES=$(echo ${AWS_ECS_SERVICE} | sed 's/,/ /g' | sed 'N;s/\n//')
+        echo "value of AWS_ECS_SERVICE_NAMES " $AWS_ECS_SERVICE_NAMES
+        IFS=' ' read -a AWS_ECS_SERVICES <<< $AWS_ECS_SERVICE_NAMES
+        if [ ${#AWS_ECS_SERVICES[@]} -gt 0 ]; then
+            echo "${#AWS_ECS_SERVICES[@]} service are going to be updated"
+            for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
+            do
+            echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
+            ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
+            check_service_status "$AWS_ECS_SERVICE_NAME"
+            #echo $REVISION
+            done
+        else
+            echo "Kindly check the service name in Parameter"
+            usage
+            exit 1
+        fi
 	fi
-	
 fi
 
 

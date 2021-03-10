@@ -1,0 +1,8 @@
+{
+        "AWS_REPOSITORY": "tc-somethings",
+        "AWS_ECS_CLUSTER": "tc-somethings",
+        "AWS_ECS_SERVICE": "something-something-svc",
+        "AWS_ECS_TASK_FAMILY": "tc-somethings-task",
+        "AWS_ECS_CONTAINER_NAME": "tc-somethings-container",
+        "AWS_ECS_PORTS": "0:4000:TCP"
+    }

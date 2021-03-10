@@ -37,5 +37,5 @@ echo "export AWS_SECRET_ACCESS_KEY=\"$AWS_SECRET_ACCESS_KEY\"">>awsenvconf
 echo "export AWS_ENVIRONMENT=\"$AWS_ENVIRONMENT\"">>awsenvconf
 echo "export AWS_SESSION_TOKEN=\"$AWS_SESSION_TOKEN\"">>awsenvconf
 echo "export AWS_ACCOUNT_ID=\"$AWS_ACCOUNT_ID\"">>awsenvconf
-
+echo awsenvconf >>.dockerignore
 

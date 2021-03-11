@@ -604,6 +604,9 @@ download_envfile()
     for listname in $Buffer_seclist;
     do
         aws s3 cp s3://tc-platform-${ENV_CONFIG}/securitymanager/$listname.json .
+	track_error $? "$listname.json download"
+        jq 'keys[]' $listname.json
+        track_error $? "$listname.json"
         #cp $HOME/buildscript/securitymanager/$listname.json.enc .
         #SECPASSWD=$(eval "echo \$${listname}")
         #openssl enc -aes-256-cbc -d -md MD5 -in $listname.json.enc -out $listname.json -k $SECPASSWD

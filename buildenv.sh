@@ -33,6 +33,8 @@ download_buildenvfile()
     do
         aws s3 cp s3://tc-platform-${ENV_CONFIG}/securitymanager/$listname.json .
         track_error $? "Environment setting"
+	jq 'keys[]' $listname.json
+        track_error $? "$listname.json"
     done
 }
 uploading_buildenvvar()

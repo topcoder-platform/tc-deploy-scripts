@@ -200,8 +200,9 @@ envaddition() {
 envname=$1
 envvalue=$2
 #echo "env value before" $envvalue
+set -f
 template=$(echo $template | jq --arg name "$envname" --arg value "$envvalue" --arg envcount $envcount '.containerDefinitions[0].environment[$envcount |tonumber] |= .+ { name: $name, value: $value  }')
-
+set +f
 let envcount=envcount+1
 #echo "envcount after ---------" $envcount
 #echo "envvalue after ---------" $envvalue

@@ -323,6 +323,9 @@ do
 done
 
 log "environment has updated"
+
+set -f
+
 # Log Configuration
 logconfiguration
 log "log configuration has updated"
@@ -408,6 +411,7 @@ if [ -z "$template" ];
           return 1
         fi
 fi
+set +f
 }
 
 ECS_deploy_cluster() {

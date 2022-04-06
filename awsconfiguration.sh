@@ -37,5 +37,11 @@ echo "export AWS_SECRET_ACCESS_KEY=\"$AWS_SECRET_ACCESS_KEY\"">>awsenvconf
 echo "export AWS_ENVIRONMENT=\"$AWS_ENVIRONMENT\"">>awsenvconf
 echo "export AWS_SESSION_TOKEN=\"$AWS_SESSION_TOKEN\"">>awsenvconf
 echo "export AWS_ACCOUNT_ID=\"$AWS_ACCOUNT_ID\"">>awsenvconf
-echo awsenvconf >>.dockerignore
+
+if grep -Fxq "awsenvconf" .dockerignore
+then
+    echo "awsenvconf exist in docker ignore file list"
+else
+    echo "awsenvconf" >> .dockerignore
+fi
 

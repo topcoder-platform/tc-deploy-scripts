@@ -33,6 +33,8 @@ download_buildenvfile()
     do
         aws s3 cp s3://tc-platform-${ENV_CONFIG}/securitymanager/$listname.json .
         track_error $? "Environment setting"
+	jq 'keys[]' $listname.json
+        track_error $? "$listname.json"
     done
 }
 uploading_buildenvvar()
@@ -102,3 +104,10 @@ done
 ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 download_buildenvfile
 uploading_buildenvvar
+
+if grep -Fxq "buildenvvar" .dockerignore
+then
+    log "buildenvvar exist in docker ignore file list"
+else
+    echo "buildenvvar" >> .dockerignore
+fi

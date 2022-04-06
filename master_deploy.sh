@@ -200,8 +200,9 @@ envaddition() {
 envname=$1
 envvalue=$2
 #echo "env value before" $envvalue
+set -f
 template=$(echo $template | jq --arg name "$envname" --arg value "$envvalue" --arg envcount $envcount '.containerDefinitions[0].environment[$envcount |tonumber] |= .+ { name: $name, value: $value  }')
-
+set +f
 let envcount=envcount+1
 #echo "envcount after ---------" $envcount
 #echo "envvalue after ---------" $envvalue
@@ -579,7 +580,7 @@ deploy_s3bucket() {
       uploadpath=$(echo $syncfilepath | cut -b ${lengthofsearchpath}-)
       echo $uploadpath
 	  getformatdetails=$(file ${syncfilepath})
-	  if [[ $getformatdetails == *"ASCII"* ]] || [[ $getformatdetails == *"empty"* ]]; 
+	  if [[ $getformatdetails == *"ASCII"* ]] || [[ $getformatdetails == *"UTF"* ]] || [[ $getformatdetails == *"empty"* ]]; 
 	  then
         echo "file format is ASCII and skipping gzip option"
     	S3_OPTIONS=""
@@ -604,6 +605,9 @@ download_envfile()
     for listname in $Buffer_seclist;
     do
         aws s3 cp s3://tc-platform-${ENV_CONFIG}/securitymanager/$listname.json .
+	track_error $? "$listname.json download"
+        jq 'keys[]' $listname.json
+        track_error $? "$listname.json"
         #cp $HOME/buildscript/securitymanager/$listname.json.enc .
         #SECPASSWD=$(eval "echo \$${listname}")
         #openssl enc -aes-256-cbc -d -md MD5 -in $listname.json.enc -out $listname.json -k $SECPASSWD

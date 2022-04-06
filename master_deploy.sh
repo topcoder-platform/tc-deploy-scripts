@@ -17,6 +17,7 @@ SHARED_PROPERTY_FILENAME=""
 # AWS_REGION=""
 TAG=""
 SEC_LIST=""
+SECPS_LIST=""
 #COUNTER_LIMIT=12
 
 if [ -z "$COUNTER_LIMIT" ]; then
@@ -36,6 +37,7 @@ task_def=""
 CONTAINER_LOG_DRIVER="awslogs"
 portcount=0
 envcount=0
+psenvcount=0
 volcount=0
 template=""
 TEMPLATE_SKELETON_FILE="base_template_v2.json"
@@ -208,6 +210,21 @@ let envcount=envcount+1
 #echo "envvalue after ---------" $envvalue
 }
 #=========================
+psenvaddition() {
+    #echo "psenvcount before " $psenvcount
+    
+envname=$1
+envvalue=$2
+#echo "env value before" $envvalue
+set -f
+template=$(echo $template | jq --arg name "$envname" --arg value "$envvalue" --arg psenvcount $psenvcount '.containerDefinitions[0].secrets[$psenvcount |tonumber] |= .+ { name: $name, valueFrom: $value  }')
+set +f
+let psenvcount=psenvcount+1
+#echo "psenvcount after ---------" $psenvcount
+#echo "envvalue after ---------" $envvalue
+}
+
+#=========================
 logconfiguration() {
 template=$(echo $template | jq --arg logDriver $CONTAINER_LOG_DRIVER '.containerDefinitions[0].logConfiguration.logDriver=$logDriver')
 template=$(echo $template | jq --arg awslogsgroup "/aws/ecs/$AWS_ECS_CLUSTER" '.containerDefinitions[0].logConfiguration.options."awslogs-group"=$awslogsgroup')
@@ -259,12 +276,16 @@ log "Family updated"
 #taskrole and excution role has updated
 if [ -z $AWS_ECS_TASK_ROLE_ARN ];
 then
-  log "No Execution Role defined"
+  log "No Task Role defined"
 else
   template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/$AWS_ECS_TASK_ROLE_ARN '.taskRoleArn=$taskRoleArn')
 fi
-#template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.executionRoleArn=$executionRoleArn')
-
+if [ -z $AWS_ECS_TASK_EXECUTION_ROLE_ARN ];
+then
+  log "No Task Execution Role defined"
+else
+  template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/$AWS_ECS_TASK_EXECUTION_ROLE_ARN '.executionRoleArn=$executionRoleArn')
+fi
 #Container Name update
 template=$(echo $template | jq --arg name $AWS_ECS_CONTAINER_NAME '.containerDefinitions[0].name=$name')
 log "Container Name updated"
@@ -321,7 +342,33 @@ do
     done
     IFS=$o  
 done
-
+if [ -z $SECPS_LIST ];
+then
+    log "No ps file provided"
+else
+    Buffer_seclist=$(echo $SECPS_LIST | sed 's/,/ /g')
+    for listname in $Buffer_seclist;
+    do
+        local o=$IFS
+        IFS=$(echo -en "\n\b")
+        varpath=$( cat $listname.json | jq  -r ' .ParmeterPathList[] ' )
+        #log "vars are fetched"
+        for k in $varpath;
+        do
+        echo $k
+        aws ssm get-parameters-by-path --path $k --query "Parameters[*].{Name:Name}" > paramnames.json
+        ###paramnames=$(cat paramnames.json | jq -r .[].Name | rev | cut -d / -f 1 | rev)
+        for s in $(cat paramnames.json | jq -r .[].Name )
+        do
+            varname=$(echo $s | rev | cut -d / -f 1 | rev)
+            varvalue="arn:aws:ssm:$AWS_REGION:$AWS_ACCOUNT_ID:$s"
+            psenvaddition "$varname" "$varvalue"
+            #echo "$varname" "$varvalue"
+        done
+        done
+        IFS=$o  
+    done
+fi
 log "environment has updated"
 # Log Configuration
 logconfiguration
@@ -613,6 +660,17 @@ download_envfile()
         #openssl enc -aes-256-cbc -d -md MD5 -in $listname.json.enc -out $listname.json -k $SECPASSWD
     done
 }
+download_psfile()
+{
+    Buffer_seclist=$(echo $SECPS_LIST | sed 's/,/ /g' )
+    for listname in $Buffer_seclist;
+    do
+        aws s3 cp s3://tc-platform-${ENV_CONFIG}/securitymanager/$listname.json .
+	    track_error $? "$listname.json download"
+        jq 'keys[]' $listname.json
+        track_error $? "$listname.json"
+    done
+}
 decrypt_fileenc()
 {
     Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g' )
@@ -696,7 +754,7 @@ deploy_lambda_package()
 # Input Collection and validation
 input_parsing_validation()
 {
-while getopts .d:h:i:e:t:v:s:p:g:c:m:. OPTION
+while getopts .d:h:i:e:l:t:v:s:p:g:c:m:. OPTION
 do
      case $OPTION in
          d)
@@ -711,6 +769,9 @@ do
              ;;
          e)
              ENV=$OPTARG
+             ;;
+         l)
+             SECPS_LIST=$OPTARG
              ;;
          t)
              TAG=$OPTARG
@@ -773,6 +834,13 @@ ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 # fi
 
 download_envfile
+if [ -z $SECPS_LIST ];
+then
+     log "No secret parameter file list provided"
+
+else
+     download_psfile
+fi
 #decrypt_fileenc
 #uploading_envvar
 

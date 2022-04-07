@@ -361,7 +361,7 @@ else
         for s in $(cat paramnames.json | jq -r .[].Name )
         do
             varname=$(echo $s | rev | cut -d / -f 1 | rev)
-            varvalue="arn:aws:ssm:$AWS_REGION:$AWS_ACCOUNT_ID:$s"
+            varvalue="arn:aws:ssm:$AWS_REGION:$AWS_ACCOUNT_ID:parameter$s"
             psenvaddition "$varname" "$varvalue"
             #echo "$varname" "$varvalue"
         done

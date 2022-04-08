@@ -138,6 +138,22 @@ ECS_push_ecr_image() {
         docker tag $APP_IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$CIRCLE_BUILD_NUM
         ECS_TAG=$CIRCLE_BUILD_NUM
     fi
+
+    CHECK_ECR_EXIST=""
+    CHECK_ECR_EXIST=$(aws ecr describe-repositories --repository-names ${AWS_REPOSITORY} 2>&1)
+    if [ $? -ne 0 ]; then
+        if echo ${CHECK_ECR_EXIST} | grep -q RepositoryNotFoundException; then
+            echo "repo does not exist and creating repo"
+            aws ecr create-repository --repository-name $AWS_REPOSITORY  
+            track_error $? "ECS ECR repo creation" 
+            log "Repo created successfully."     
+        else
+            echo ${CHECK_ECR_EXIST}
+        fi
+    else    
+        echo "$AWS_REPOSITORY repository already exist"
+    fi 
+
 	log "Pushing Docker Image..."
 	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
 	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$ECS_TAG
@@ -460,16 +476,44 @@ fi
 ECS_deploy_cluster() {
 
     AWS_ECS_SERVICE=$1
-    update_result=$(aws ecs update-service --cluster $AWS_ECS_CLUSTER --service $AWS_ECS_SERVICE --task-definition $REVISION )
-    result=$(echo $update_result | $JQ '.service.taskDefinition' )
-    log $result
-    if [[ $result != $REVISION ]]; then
-        #echo "Error updating service."
-		track_error 1 "ECS updating service."	
-        return 1
+    #checking cluster exist
+    CHECK_CLUSTER_EXIST=""
+    CHECK_CLUSTER_EXIST=$(aws ecs describe-clusters --cluster $AWS_ECS_CLUSTER | jq --raw-output 'select(.clusters[].clusterName != null ) | .clusters[].clusterName')
+    if [ -z $CHECK_CLUSTER_EXIST ];
+    then
+        echo "$AWS_ECS_CLUSTER cluster does not exist. Kindly check with admin team"
+        exit 1
+    else
+        echo "$AWS_ECS_CLUSTER Cluster exist"
+    fi
+    #checking service exist
+    CHECK_SERVICE_EXIST=""
+    CHECK_SERVICE_EXIST=$(aws ecs describe-services --service $AWS_ECS_SERVICE --cluster $AWS_ECS_CLUSTER | jq --raw-output 'select(.services[].status != null ) | .services[].status')
+    if [ -z $CHECK_SERVICE_EXIST ];
+    then
+        if [ "$ECS_TEMPLATE_TYPE" == "FARGATE" ];
+        then
+            echo "Fargate Service does not exist. Kindly check with admin team"
+            exit 1
+        else
+            echo "service does not exist. Creating service"
+            aws ecs create-service --cluster $AWS_ECS_CLUSTER --service-name $AWS_ECS_SERVICE --task-definition $REVISION --desired-count 1 
+            echo "Kindly work with admin team for routing"
+        fi
+    else
+        echo "service exist.Application updates the service"
+        update_result=$(aws ecs update-service --cluster $AWS_ECS_CLUSTER --service $AWS_ECS_SERVICE --task-definition $REVISION )
+        result=$(echo $update_result | $JQ '.service.taskDefinition' )
+        log $result
+        if [[ $result != $REVISION ]]; then
+            #echo "Error updating service."
+            track_error 1 "ECS updating service."	
+            return 1
+        fi
+        
+        echo "Update service intialised successfully for deployment"    
     fi
 
-    echo "Update service intialised successfully for deployment"
     return 0
 }
 
@@ -1042,7 +1086,7 @@ then
             echo "${#AWS_ECS_SERVICES[@]} service are going to be updated"
             for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
             do
-            echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
+            echo "creating/updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
             ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
             check_service_status "$AWS_ECS_SERVICE_NAME"
             #echo $REVISION

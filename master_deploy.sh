@@ -17,6 +17,7 @@ SHARED_PROPERTY_FILENAME=""
 # AWS_REGION=""
 TAG=""
 SEC_LIST=""
+SECPS_LIST=""
 #COUNTER_LIMIT=12
 
 if [ -z "$COUNTER_LIMIT" ]; then
@@ -36,6 +37,7 @@ task_def=""
 CONTAINER_LOG_DRIVER="awslogs"
 portcount=0
 envcount=0
+psenvcount=0
 volcount=0
 template=""
 TEMPLATE_SKELETON_FILE="base_template_v2.json"
@@ -136,6 +138,22 @@ ECS_push_ecr_image() {
         docker tag $APP_IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$CIRCLE_BUILD_NUM
         ECS_TAG=$CIRCLE_BUILD_NUM
     fi
+
+    CHECK_ECR_EXIST=""
+    CHECK_ECR_EXIST=$(aws ecr describe-repositories --repository-names ${AWS_REPOSITORY} 2>&1)
+    if [ $? -ne 0 ]; then
+        if echo ${CHECK_ECR_EXIST} | grep -q RepositoryNotFoundException; then
+            echo "repo does not exist and creating repo"
+            aws ecr create-repository --repository-name $AWS_REPOSITORY  
+            track_error $? "ECS ECR repo creation" 
+            log "Repo created successfully."     
+        else
+            echo ${CHECK_ECR_EXIST}
+        fi
+    else    
+        echo "$AWS_REPOSITORY repository already exist"
+    fi 
+
 	log "Pushing Docker Image..."
 	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
 	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$ECS_TAG
@@ -208,6 +226,21 @@ let envcount=envcount+1
 #echo "envvalue after ---------" $envvalue
 }
 #=========================
+psenvaddition() {
+    #echo "psenvcount before " $psenvcount
+    
+envname=$1
+envvalue=$2
+#echo "env value before" $envvalue
+set -f
+template=$(echo $template | jq --arg name "$envname" --arg value "$envvalue" --arg psenvcount $psenvcount '.containerDefinitions[0].secrets[$psenvcount |tonumber] |= .+ { name: $name, valueFrom: $value  }')
+set +f
+let psenvcount=psenvcount+1
+#echo "psenvcount after ---------" $psenvcount
+#echo "envvalue after ---------" $envvalue
+}
+
+#=========================
 logconfiguration() {
 template=$(echo $template | jq --arg logDriver $CONTAINER_LOG_DRIVER '.containerDefinitions[0].logConfiguration.logDriver=$logDriver')
 template=$(echo $template | jq --arg awslogsgroup "/aws/ecs/$AWS_ECS_CLUSTER" '.containerDefinitions[0].logConfiguration.options."awslogs-group"=$awslogsgroup')
@@ -259,12 +292,16 @@ log "Family updated"
 #taskrole and excution role has updated
 if [ -z $AWS_ECS_TASK_ROLE_ARN ];
 then
-  log "No Execution Role defined"
+  log "No Task Role defined"
 else
   template=$(echo $template | jq --arg taskRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/$AWS_ECS_TASK_ROLE_ARN '.taskRoleArn=$taskRoleArn')
 fi
-#template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole '.executionRoleArn=$executionRoleArn')
-
+if [ -z $AWS_ECS_TASK_EXECUTION_ROLE_ARN ];
+then
+  log "No Task Execution Role defined"
+else
+  template=$(echo $template | jq --arg executionRoleArn arn:aws:iam::$AWS_ACCOUNT_ID:role/$AWS_ECS_TASK_EXECUTION_ROLE_ARN '.executionRoleArn=$executionRoleArn')
+fi
 #Container Name update
 template=$(echo $template | jq --arg name $AWS_ECS_CONTAINER_NAME '.containerDefinitions[0].name=$name')
 log "Container Name updated"
@@ -321,7 +358,33 @@ do
     done
     IFS=$o  
 done
-
+if [ -z $SECPS_LIST ];
+then
+    log "No ps file provided"
+else
+    Buffer_seclist=$(echo $SECPS_LIST | sed 's/,/ /g')
+    for listname in $Buffer_seclist;
+    do
+        local o=$IFS
+        IFS=$(echo -en "\n\b")
+        varpath=$( cat $listname.json | jq  -r ' .ParmeterPathList[] ' )
+        #log "vars are fetched"
+        for k in $varpath;
+        do
+        echo $k
+        aws ssm get-parameters-by-path --path $k --query "Parameters[*].{Name:Name}" > paramnames.json
+        ###paramnames=$(cat paramnames.json | jq -r .[].Name | rev | cut -d / -f 1 | rev)
+        for s in $(cat paramnames.json | jq -r .[].Name )
+        do
+            varname=$(echo $s | rev | cut -d / -f 1 | rev)
+            varvalue="arn:aws:ssm:$AWS_REGION:$AWS_ACCOUNT_ID:parameter$s"
+            psenvaddition "$varname" "$varvalue"
+            #echo "$varname" "$varvalue"
+        done
+        done
+        IFS=$o  
+    done
+fi
 log "environment has updated"
 # Log Configuration
 logconfiguration
@@ -413,16 +476,44 @@ fi
 ECS_deploy_cluster() {
 
     AWS_ECS_SERVICE=$1
-    update_result=$(aws ecs update-service --cluster $AWS_ECS_CLUSTER --service $AWS_ECS_SERVICE --task-definition $REVISION )
-    result=$(echo $update_result | $JQ '.service.taskDefinition' )
-    log $result
-    if [[ $result != $REVISION ]]; then
-        #echo "Error updating service."
-		track_error 1 "ECS updating service."	
-        return 1
+    #checking cluster exist
+    CHECK_CLUSTER_EXIST=""
+    CHECK_CLUSTER_EXIST=$(aws ecs describe-clusters --cluster $AWS_ECS_CLUSTER | jq --raw-output 'select(.clusters[].clusterName != null ) | .clusters[].clusterName')
+    if [ -z $CHECK_CLUSTER_EXIST ];
+    then
+        echo "$AWS_ECS_CLUSTER cluster does not exist. Kindly check with admin team"
+        exit 1
+    else
+        echo "$AWS_ECS_CLUSTER Cluster exist"
+    fi
+    #checking service exist
+    CHECK_SERVICE_EXIST=""
+    CHECK_SERVICE_EXIST=$(aws ecs describe-services --service $AWS_ECS_SERVICE --cluster $AWS_ECS_CLUSTER | jq --raw-output 'select(.services[].status != null ) | .services[].status')
+    if [ -z $CHECK_SERVICE_EXIST ];
+    then
+        if [ "$ECS_TEMPLATE_TYPE" == "FARGATE" ];
+        then
+            echo "Fargate Service does not exist. Kindly check with admin team"
+            exit 1
+        else
+            echo "service does not exist. Creating service"
+            aws ecs create-service --cluster $AWS_ECS_CLUSTER --service-name $AWS_ECS_SERVICE --task-definition $REVISION --desired-count 1 
+            echo "Kindly work with admin team for routing"
+        fi
+    else
+        echo "service exist.Application updates the service"
+        update_result=$(aws ecs update-service --cluster $AWS_ECS_CLUSTER --service $AWS_ECS_SERVICE --task-definition $REVISION )
+        result=$(echo $update_result | $JQ '.service.taskDefinition' )
+        log $result
+        if [[ $result != $REVISION ]]; then
+            #echo "Error updating service."
+            track_error 1 "ECS updating service."	
+            return 1
+        fi
+        
+        echo "Update service intialised successfully for deployment"    
     fi
 
-    echo "Update service intialised successfully for deployment"
     return 0
 }
 
@@ -613,6 +704,17 @@ download_envfile()
         #openssl enc -aes-256-cbc -d -md MD5 -in $listname.json.enc -out $listname.json -k $SECPASSWD
     done
 }
+download_psfile()
+{
+    Buffer_seclist=$(echo $SECPS_LIST | sed 's/,/ /g' )
+    for listname in $Buffer_seclist;
+    do
+        aws s3 cp s3://tc-platform-${ENV_CONFIG}/securitymanager/$listname.json .
+	    track_error $? "$listname.json download"
+        jq 'keys[]' $listname.json
+        track_error $? "$listname.json"
+    done
+}
 decrypt_fileenc()
 {
     Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g' )
@@ -696,7 +798,7 @@ deploy_lambda_package()
 # Input Collection and validation
 input_parsing_validation()
 {
-while getopts .d:h:i:e:t:v:s:p:g:c:m:. OPTION
+while getopts .d:h:i:e:l:t:v:s:p:g:c:m:. OPTION
 do
      case $OPTION in
          d)
@@ -711,6 +813,9 @@ do
              ;;
          e)
              ENV=$OPTARG
+             ;;
+         l)
+             SECPS_LIST=$OPTARG
              ;;
          t)
              TAG=$OPTARG
@@ -773,6 +878,13 @@ ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 # fi
 
 download_envfile
+if [ -z $SECPS_LIST ];
+then
+     log "No secret parameter file list provided"
+
+else
+     download_psfile
+fi
 #decrypt_fileenc
 #uploading_envvar
 
@@ -974,7 +1086,7 @@ then
             echo "${#AWS_ECS_SERVICES[@]} service are going to be updated"
             for AWS_ECS_SERVICE_NAME in "${AWS_ECS_SERVICES[@]}"
             do
-            echo "updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
+            echo "creating/updating ECS Cluster Service - $AWS_ECS_SERVICE_NAME"
             ECS_deploy_cluster "$AWS_ECS_SERVICE_NAME"
             check_service_status "$AWS_ECS_SERVICE_NAME"
             #echo $REVISION

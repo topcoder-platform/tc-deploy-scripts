@@ -2,21 +2,11 @@
 AWSENV=$1
 AWS_REGION=$2
 
-echo $TC_GIT_ORG
-echo $TC_GIT_AUTHOR
-echo $TC_REPONAME
-echo $BUILD_NUMBER
-echo $BRANCH_NAME
-echo ${TC_GIT_AUTHOR}
 CIRCLE_PROJECT_USERNAME=$TC_GIT_ORG
 CIRCLE_PROJECT_REPONAME=$TC_REPONAME
 CIRCLE_BUILD_NUM=$BUILD_NUMBER
 CIRCLE_BRANCH=$BRANCH_NAME
 
-echo $CIRCLE_PROJECT_USERNAME
-echo $CIRCLE_PROJECT_REPONAME
-echo $CIRCLE_BUILD_NUM
-echo $CIRCLE_BRANCH
 BASE64_DECODER="base64 -d" # option -d for Linux base64 tool
 echo AAAA | base64 -d > /dev/null 2>&1 || BASE64_DECODER="base64 -D" # option -D on MacOS
 decode_base64_url() {
@@ -32,11 +22,9 @@ if [ -z "$AWS_REGION" ];
 then
     AWS_REGION="us-east-1"
 fi
-echo "curl -X POST $CI_AUTH0_URL -H 'Content-Type: application/json' -d '{ \"client_id\": \"$CI_AUTH0_CLIENTID\", \"client_secret\": \"$CI_AUTH0_CLIENTSECRET\", \"audience\": \"$CI_AUTH0_AUDIENCE\", \"grant_type\": \"client_credentials\" , \"environment\" : \"$AWSENV\" , \"username\" : \"$CIRCLE_PROJECT_USERNAME\" , \"reponame\" : \"$CIRCLE_PROJECT_REPONAME\", \"build_num\": \"$CIRCLE_BUILD_NUM\", \"branch\": \"$CIRCLE_BRANCH\"}'"
+# echo "curl -X POST $CI_AUTH0_URL -H 'Content-Type: application/json' -d '{ \"client_id\": \"$CI_AUTH0_CLIENTID\", \"client_secret\": \"$CI_AUTH0_CLIENTSECRET\", \"audience\": \"$CI_AUTH0_AUDIENCE\", \"grant_type\": \"client_credentials\" , \"environment\" : \"$AWSENV\" , \"username\" : \"$CIRCLE_PROJECT_USERNAME\" , \"reponame\" : \"$CIRCLE_PROJECT_REPONAME\", \"build_num\": \"$CIRCLE_BUILD_NUM\", \"branch\": \"$CIRCLE_BRANCH\"}'"
 auth0cmd=$(echo "curl -X POST $CI_AUTH0_URL -H 'Content-Type: application/json' -d '{ \"client_id\": \"$CI_AUTH0_CLIENTID\", \"client_secret\": \"$CI_AUTH0_CLIENTSECRET\", \"audience\": \"$CI_AUTH0_AUDIENCE\", \"grant_type\": \"client_credentials\" , \"environment\" : \"$AWSENV\" , \"username\" : \"$CIRCLE_PROJECT_USERNAME\" , \"reponame\" : \"$CIRCLE_PROJECT_REPONAME\", \"build_num\": \"$CIRCLE_BUILD_NUM\", \"branch\": \"$CIRCLE_BRANCH\"}'")
-echo $auth0cmd 
 token=$( eval $auth0cmd | jq -r .access_token )
-echo $token
 tokenjsonformat=$( decode_base64_url $(echo -n $token | cut -d "." -f 2) )
 echo $tokenjsonformat
 AWS_ACCESS_KEY_ID=$(echo $tokenjsonformat | jq -r . | grep AWS_ACCESS_KEY | cut -d '"' -f 4)
@@ -57,6 +45,9 @@ echo "export AWS_SECRET_ACCESS_KEY=\"$AWS_SECRET_ACCESS_KEY\"">>awsenvconf
 echo "export AWS_ENVIRONMENT=\"$AWS_ENVIRONMENT\"">>awsenvconf
 echo "export AWS_SESSION_TOKEN=\"$AWS_SESSION_TOKEN\"">>awsenvconf
 echo "export AWS_ACCOUNT_ID=\"$AWS_ACCOUNT_ID\"">>awsenvconf
+
+pwd
+ls -lath
 
 if grep -Fxq "awsenvconf" .dockerignore
 then

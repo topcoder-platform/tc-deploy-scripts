@@ -1,6 +1,10 @@
 #!/bin/bash
 AWSENV=$1
 AWS_REGION=$2
+CIRCLE_PROJECT_USERNAME=$TC_GIT_AUTHOR
+CIRCLE_PROJECT_REPONAME=$TC_REPONAME
+CIRCLE_BUILD_NUM=$BUILD_NUMBER
+CIRCLE_BRANCH=$BRANCH_NAME
 BASE64_DECODER="base64 -d" # option -d for Linux base64 tool
 echo AAAA | base64 -d > /dev/null 2>&1 || BASE64_DECODER="base64 -D" # option -D on MacOS
 decode_base64_url() {

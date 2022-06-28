@@ -51,6 +51,7 @@ uploading_buildenvvar()
             varvalue=$(echo $s| jq -r ".value")
             echo $varname
             echo export "$varname"="'$varvalue'" >>"buildenvvar"
+	    echo "env.$varname"="'$varvalue'" >>"buildenvvarg"
 	        #export "$varname"="$varvalue"
             #echo export "$varname"="$varvalue" >>"$BASH_ENV"
             #echo export "$varname"="\"$varvalue\"" >> ~/.circlerc
@@ -110,4 +111,10 @@ then
     log "buildenvvar exist in docker ignore file list"
 else
     echo "buildenvvar" >> .dockerignore
+fi
+if grep -Fxq "buildenvvarg" .dockerignore
+then
+    log "buildenvvarg exist in docker ignore file list"
+else
+    echo "buildenvvarg" >> .dockerignore
 fi

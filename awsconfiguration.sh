@@ -46,8 +46,14 @@ echo "export AWS_ENVIRONMENT=\"$AWS_ENVIRONMENT\"">>awsenvconf
 echo "export AWS_SESSION_TOKEN=\"$AWS_SESSION_TOKEN\"">>awsenvconf
 echo "export AWS_ACCOUNT_ID=\"$AWS_ACCOUNT_ID\"">>awsenvconf
 
-pwd
-ls -lath
+echo "">awsenvconfg
+echo "env.AWS_REGION=\"$AWS_REGION\"">>awsenvconfg
+echo "env.AWS_ACCESS_KEY_ID=\"$AWS_ACCESS_KEY_ID\"">>awsenvconfg
+echo "env.AWS_SECRET_ACCESS_KEY=\"$AWS_SECRET_ACCESS_KEY\"">>awsenvconfg
+echo "env.AWS_ENVIRONMENT=\"$AWS_ENVIRONMENT\"">>awsenvconfg
+echo "env.AWS_SESSION_TOKEN=\"$AWS_SESSION_TOKEN\"">>awsenvconfg
+echo "env.AWS_ACCOUNT_ID=\"$AWS_ACCOUNT_ID\"">>awsenvconfg
+
 
 if grep -Fxq "awsenvconf" .dockerignore
 then

@@ -105,6 +105,7 @@ done
 ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 download_buildenvfile
 uploading_buildenvvar
+chmod +x buildenvvar
 
 if grep -Fxq "buildenvvar" .dockerignore
 then

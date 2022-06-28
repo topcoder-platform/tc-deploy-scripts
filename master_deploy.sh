@@ -8,6 +8,7 @@ ENV=""
 BUILD_VARIABLE_FILE_NAME="./buildvar.conf"
 SECRET_FILE_NAME="./buildsecvar.conf"
 SHARED_PROPERTY_FILENAME=""
+CIRCLE_BUILD_NUM=$BUILD_NUMBER
 
 #Common Varibles
 #echo $AWS_ACCESS_KEY_ID
@@ -135,8 +136,8 @@ ECS_push_ecr_image() {
         log "Image has followed standard format"
     else
         log "Image does not follow stanard format. Modifying the image and updating the ECS_TAG"
-        docker tag $APP_IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$CIRCLE_BUILD_NUM
-        ECS_TAG=$CIRCLE_BUILD_NUM
+        docker tag $APP_IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:tc-jb-$CIRCLE_BUILD_NUM
+        ECS_TAG=tc-jb-$CIRCLE_BUILD_NUM
     fi
 
     CHECK_ECR_EXIST=""
@@ -169,8 +170,8 @@ ECSCLI_push_ecr_image() {
         log "Image has followed standard format"
     else
         log "Image does not follow stanard format. Modifying the image and updating the ECS_TAG"
-        docker tag $IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:$CIRCLE_BUILD_NUM
-        ECS_TAG=$CIRCLE_BUILD_NUM
+        docker tag $IMAGE_NAME:$ECS_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:tc-jb-$CIRCLE_BUILD_NUM
+        ECS_TAG=tc-jb-$CIRCLE_BUILD_NUM
     fi
 	log "Pushing Docker Image..."
 	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)

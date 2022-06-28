@@ -53,6 +53,7 @@ echo "env.AWS_ENVIRONMENT=\"$AWS_ENVIRONMENT\"">>awsenvconfg
 echo "env.AWS_SESSION_TOKEN=\"$AWS_SESSION_TOKEN\"">>awsenvconfg
 echo "env.AWS_ACCOUNT_ID=\"$AWS_ACCOUNT_ID\"">>awsenvconfg
 
+chmod +x awsenvconf
 
 if grep -Fxq "awsenvconf" .dockerignore
 then

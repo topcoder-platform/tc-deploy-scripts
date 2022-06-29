@@ -41,6 +41,7 @@ envcount=0
 psenvcount=0
 volcount=0
 template=""
+TEMPLATE_DIR="$(dirname "$(pwd)")"/buildscript
 TEMPLATE_SKELETON_FILE="base_template_v2.json"
 APP_IMAGE_NAME=""
 DEPLOYCATEGORY=""
@@ -911,7 +912,7 @@ then
         fi
         DEPLOYCATEGORYNAME="ECSCLI"
     else
-        cp $HOME/buildscript/$TEMPLATE_SKELETON_FILE .
+        cp $TEMPLATE_DIR/$TEMPLATE_SKELETON_FILE .
 
         if [ -z $AWS_REPOSITORY ] || [ -z $AWS_ECS_CLUSTER ] || [ -z $AWS_ECS_SERVICE ] || [ -z $AWS_ECS_TASK_FAMILY ] || [ -z $AWS_ECS_CONTAINER_NAME ] || [ -z $AWS_ECS_PORTS ] || [ -z $ECS_TAG ];
         then
@@ -934,7 +935,7 @@ fi
 if [ "$DEPLOYMENT_TYPE" == "EBS" ]
 then
   # EBS_TAG = the docker image tag for example dev.201807051535
-  cp $HOME/buildscript/$EBS_TEMPLATE_SKELETON_FILE .
+  cp $TEMPLATE_DIR/$EBS_TEMPLATE_SKELETON_FILE .
   EBS_TAG=$TAG
   AWS_EBS_APPVER="${AWS_EBS_ENV_NAME}-${EBS_TAG}"
   IMG_WITH_EBS_TAG="${DOCKER_IMAGE_NAME}:${EBS_TAG}"

@@ -536,7 +536,7 @@ check_service_status() {
            servicestatus=`aws ecs describe-services --service $AWS_ECS_SERVICE --cluster $AWS_ECS_CLUSTER | $JQ '.services[].events[0].message'`
            counter=`expr $counter + 1`
            if [[ $counter -gt $COUNTER_LIMIT ]] ; then
-                echo "Service does not reach steady state with in 180 seconds. Please check"
+                echo "Service does not reach steady state with in $(($COUNTER_LIMIT*15+60)) seconds. Please check"
                 exit 1
            fi
         done

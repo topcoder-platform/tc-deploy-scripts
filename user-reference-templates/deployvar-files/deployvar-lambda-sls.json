@@ -1,0 +1,4 @@
+{
+    "AWS_LAMBDA_DEPLOY_TYPE": "SLS",
+    "AWS_LAMBDA_STAGE": "dev"
+  }

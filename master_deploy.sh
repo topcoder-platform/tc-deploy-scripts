@@ -131,7 +131,7 @@ configure_docker_private_login() {
 
 # ECS Deployment Functions
 ECS_push_ecr_image() {
-    echo "\n\n"
+    echo ""
     if [ -z "$APP_IMAGE_NAME" ];
     then
         log "ECS image follows the standard format"
@@ -160,7 +160,7 @@ ECS_push_ecr_image() {
 	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
 	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$ECS_TAG
 	track_error $? "ECS ECR image push"
-	log "Docker Image published\n\n"
+	log "Docker Image published"
 }
 
 ECSCLI_push_ecr_image() {
@@ -178,7 +178,7 @@ ECSCLI_push_ecr_image() {
 	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
 	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:$ECS_TAG
 	track_error $? "ECS ECR image push"
-	log "Docker ECR Image published\n\n"
+	log "Docker ECR Image published"
 }
 
 ECSCLI_update_env()
@@ -520,7 +520,8 @@ ECS_deploy_cluster() {
             return 1
         fi
         
-        echo "Updated service intialised successfully for deployment\n\n"    
+        echo "Updated service intialised successfully for deployment"
+        echo    
     fi
 
     return 0
@@ -553,17 +554,18 @@ validate_update_loggroup()
     #echo $log_group_fetch
     if [ -z $log_group_fetch ];
     then
-        echo "\nLog group does not exist\n"
+        echo "Log group does not exist"
         aws logs create-log-group --log-group-name /aws/ecs/$AWS_ECS_CLUSTER
         track_error $? "aws log group" 
     else
-        echo "\nLog group exists\n"
+        echo "Log group exists"
     fi
+    echo
 }
 
 # EBS integration
 ebsportmapping() {
-    echo "Port map called\n"
+    echo "Port map called"
     containerport=$1
     hostport=$2
 

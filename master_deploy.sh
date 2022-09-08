@@ -216,7 +216,7 @@ extrahostentrymapping() {
     extrahostname=$1
     extraipAddress=$2
 
-    template=$(echo $template | jq --argjson extrahostname "$extrahostname" --argjson extraipAddress "$extraipAddress" --arg extrahostcount $extrahostcount '.containerDefinitions[0].extraHosts[$extrahostcount |tonumber] |= .+ { ipAddress: $extraipAddress, hostname: $extrahostname }')
+    template=$(echo $template | jq --arg extrahostname $extrahostname --arg extraipAddress $extraipAddress --arg extrahostcount $extrahostcount '.containerDefinitions[0].extraHosts[$extrahostcount |tonumber] |= .+ { ipAddress: $extraipAddress, hostname: $extrahostname }')
     let extrahostcount=extrahostcount+1
 }
 

@@ -37,6 +37,7 @@ ECS_TEMPLATE_TYPE="EC2"
 task_def=""
 CONTAINER_LOG_DRIVER="awslogs"
 portcount=0
+extrahostcount=0
 envcount=0
 psenvcount=0
 volcount=0
@@ -211,6 +212,14 @@ portmapping() {
     let portcount=portcount+1
 }
 
+extrahostentrymapping() {
+    extrahostname=$1
+    extraipAddress=$2
+
+    template=$(echo $template | jq --argjson extrahostname $extrahostname --argjson extraipAddress $extraipAddress --arg extrahostcount $extrahostcount '.containerDefinitions[0].extraHosts[$extrahostcount |tonumber] |= .+ { ipAddress: $extraipAddress, hostname: $extrahostname }')
+    let extrahostcount=extrahostcount+1
+}
+
 envaddition() {
     #echo "envcount before " $envcount
     envname=$1
@@ -341,7 +350,24 @@ ECS_template_create_register() {
         portmapping $hostport $containerport $protocolmapped
     done
     log "ECS container port mapping updated"
-
+    
+    #Extrahost entry mapping
+    if [ -z $AWS_ECS_EXTRA_HOSTENTRY ];   
+    then
+        log "Extra host entries are not provided."
+    else
+        Buffer_Extrahostentry=$(echo $AWS_ECS_EXTRA_HOSTENTRY | sed 's/,/ /g')
+        for beh1 in $Buffer_Extrahostentry;
+        do
+            extrahostname=$( echo $beh1 | cut -d ':' -f 1 )
+            log "ECS extra host name: $extrahostname" 
+            extraipAddress=$( echo $beh1 | cut -d ':' -f 2 )
+            log "ECS extra host address: $extraipAddress"
+            extrahostentrymapping $extrahostname $extraipAddress
+        done
+        log "Extra host entries are updated."
+    fi
+    
     # Environment addition
     Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
     for listname in $Buffer_seclist;

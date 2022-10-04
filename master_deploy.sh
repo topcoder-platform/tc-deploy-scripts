@@ -157,7 +157,8 @@ ECS_push_ecr_image() {
     fi 
 
 	log "Pushing Docker Image..."
-	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+	# eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+	aws ecr get-login-password --region $AWS_REGION | docker -D login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$ECS_TAG
 	track_error $? "ECS ECR image push"
 	log "Docker Image published\n\n"
@@ -175,7 +176,8 @@ ECSCLI_push_ecr_image() {
         ECS_TAG=$CIRCLE_BUILD_NUM
     fi
 	log "Pushing Docker Image..."
-	eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+	# eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+	aws ecr get-login-password --region $AWS_REGION | docker -D login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 	docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECS_REPONAME:$ECS_TAG
 	track_error $? "ECS ECR image push"
 	log "Docker ECR Image published\n\n"

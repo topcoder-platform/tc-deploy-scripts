@@ -150,6 +150,8 @@ done
 ENV_CONFIG=`echo "$ENV" | tr '[:upper:]' '[:lower:]'`
 download_buildenvfile
 uploading_buildenvvar
+download_psfile
+uploading_buildpsenvar
 
 if grep -Fxq "buildenvvar" .dockerignore
 then

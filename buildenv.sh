@@ -90,7 +90,7 @@ uploading_buildpsenvar()
                 echo $k
                 aws ssm get-parameters-by-path --path $k --query "Parameters[*].{Name:Name, Value:Value}" > paramnames.json
                 ###paramnames=$(cat paramnames.json | jq -r .[].Name | rev | cut -d / -f 1 | rev)
-                for s in $(cat paramnames.json | jq -r .[] )
+                for s in $(cat paramnames.json | jq -c .[] )
                 do
                     varname=$(echo $s | jq -r .Name | rev | cut -d / -f 1 | rev)
                     varvalue=$(echo $s | jq -r .Value)

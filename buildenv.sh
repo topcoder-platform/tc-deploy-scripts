@@ -88,12 +88,13 @@ uploading_buildpsenvar()
             for k in $varpath;
             do
                 echo $k
-                aws ssm get-parameters-by-path --path $k --query "Parameters[*].{Name:Name}" > paramnames.json
+                aws ssm get-parameters-by-path --path $k --query "Parameters[*].{Name:Name, Value:Value}" > paramnames.json
                 ###paramnames=$(cat paramnames.json | jq -r .[].Name | rev | cut -d / -f 1 | rev)
-                for s in $(cat paramnames.json | jq -r .[].Name )
+                for s in $(cat paramnames.json | jq -r .[] )
                 do
-                    varname=$(echo $s | rev | cut -d / -f 1 | rev)
-                    varvalue="arn:aws:ssm:$AWS_REGION:$AWS_ACCOUNT_ID:parameter$s"
+                    varname=$(echo $s | jq -r .Name | rev | cut -d / -f 1 | rev)
+                    varvalue=$(echo $s | jq -r .Value)
+                    #varvalue="arn:aws:ssm:$AWS_REGION:$AWS_ACCOUNT_ID:parameter$s"
                     echo export "$varname"="'$varvalue'" >>"buildenvvar"
                     #echo "$varname" "$varvalue"
                 done

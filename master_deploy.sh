@@ -69,7 +69,7 @@ ebstemplate=""
 #variable for cloud front
 #AWS_S3_BUCKET=""
 #AWS_S3_SOURCE_SYNC_PATH=""
-CFCACHE="true"
+CFCACHE="false"
 
 # Variables for Lambda 
 #AWS_LAMBDA_DEPLOY_TYPE=""
@@ -648,10 +648,10 @@ deploy_s3bucket() {
 	cat /etc/mime.types  | grep -i map
 	cat /etc/mime.types  | grep -i ttf
 	if [ "$CFCACHE" = "true" ]; then
-        S3_CACHE_OPTIONS="--cache-control max-age=0,s-maxage=86400"
+ 		S3_CACHE_OPTIONS="--cache-control private,no-store,no-cache,must-revalidate,max-age=0"
+		echo "*** Deploying with Cloudfront Cache disabled ***"       
 	else
-		S3_CACHE_OPTIONS="--cache-control private,no-store,no-cache,must-revalidate,max-age=0"
-		echo "*** Deploying with Cloudfront Cache disabled ***"
+        S3_CACHE_OPTIONS="--cache-control max-age=0,s-maxage=86400"
 	fi
 
 	S3_OPTIONS="--exclude '*.txt' --exclude '*.js' --exclude '*.css'"

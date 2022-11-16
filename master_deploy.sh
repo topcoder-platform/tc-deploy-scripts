@@ -70,6 +70,7 @@ ebstemplate=""
 #AWS_S3_BUCKET=""
 #AWS_S3_SOURCE_SYNC_PATH=""
 CFCACHE="false"
+AWS_CLOUD_FRONT_ID=""
 
 # Variables for Lambda 
 #AWS_LAMBDA_DEPLOY_TYPE=""
@@ -696,6 +697,18 @@ deploy_s3bucket() {
     done;
 }
 
+invalidate_cf_cache()
+{
+    if [ "$CFCACHE" = "true" ]; then
+         if [ -z $AWS_CLOUD_FRONT_ID ]; then
+            echo "Based on header applicaiton has invalidated"
+            echo "Skipped which is based on AWS cloudfront ID.Kindly raise request to configure cloud front ID in deployment configuration"
+         else
+            aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*'
+         fi
+    fi
+}
+
 download_envfile()
 {
     Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g' )
@@ -1127,6 +1140,7 @@ main()
     if [ "$DEPLOYMENT_TYPE" == "CFRONT" ]
     then
         deploy_s3bucket
+        invalidate_cf_cache
     fi
 
     if [ "$DEPLOYMENT_TYPE" == "LAMBDA" ]

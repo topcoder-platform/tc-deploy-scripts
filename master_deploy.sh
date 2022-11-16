@@ -697,6 +697,27 @@ deploy_s3bucket() {
     done;
 }
 
+check_invalidation_status() {
+    INVALIDATE_ID=$1
+    counter=0
+    echo "invalidating cache"
+    sleep 60
+    invalidstatus =`aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --id $INVALIDATE_ID | $JQ '.Invalidation.Status'`
+    
+    while [[ $invalidstatus != *"Completed"* ]]
+    do
+        echo "Waiting for 15 sec and try to check the invalidation status..."
+        sleep 15
+        invalidstatus =`aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --id $INVALIDATE_ID | $JQ '.Invalidation.Status'`
+        counter=`expr $counter + 1`
+        if [[ $counter -gt $COUNTER_LIMIT ]] ; then
+            echo "Invalidation does not complete with in 180 seconds. Please check the GUI mode."
+            exit 1
+        fi
+    done
+    echo "Invalidation completed"
+}
+
 invalidate_cf_cache()
 {
     if [ "$CFCACHE" = "true" ]; then
@@ -704,7 +725,9 @@ invalidate_cf_cache()
             echo "Based on header applicaiton has invalidated"
             echo "Skipped which is based on AWS cloudfront ID.Kindly raise request to configure cloud front ID in deployment configuration"
          else
-            aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*'
+            #aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*'
+            INVALIDATE_ID=`aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*' | $JQ 'Invalidation.Id'`
+            check_invalidation_status "$INVALIDATE_ID"
          fi
     fi
 }

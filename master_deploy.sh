@@ -700,7 +700,7 @@ deploy_s3bucket() {
 check_invalidation_status() {
     INVALIDATE_ID=$1
     counter=0
-    echo "invalidating cache"
+    echo "invalidating cache with ID $INVALIDATE_ID"
     sleep 60
     invalidstatus =`aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --id $INVALIDATE_ID | $JQ '.Invalidation.Status'`
     
@@ -726,7 +726,7 @@ invalidate_cf_cache()
             echo "Skipped which is based on AWS cloudfront ID.Kindly raise request to configure cloud front ID in deployment configuration"
          else
             #aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*'
-            INVALIDATE_ID=`aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*' | $JQ 'Invalidation.Id'`
+            INVALIDATE_ID=`aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*' | $JQ '.Invalidation.Id'`
             check_invalidation_status "$INVALIDATE_ID"
          fi
     fi

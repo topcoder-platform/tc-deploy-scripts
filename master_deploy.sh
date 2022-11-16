@@ -702,13 +702,14 @@ check_invalidation_status() {
     counter=0
     echo "invalidating cache with ID $INVALIDATE_ID"
     sleep 60
-    invalidstatus =`aws cloudfront get-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --id $INVALIDATE_ID | $JQ '.Invalidation.Status'`
+    invalidatestatus =`aws cloudfront get-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --id $INVALIDATE_ID | $JQ '.Invalidation.Status'`
     
-    while [[ $invalidstatus != *"Completed"* ]]
+    while [[ $invalidatestatus != *"Completed"* ]]
     do
+        echo $invalidatestatus
         echo "Waiting for 15 sec and try to check the invalidation status..."
         sleep 15
-        invalidstatus =`aws cloudfront get-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --id $INVALIDATE_ID | $JQ '.Invalidation.Status'`
+        invalidatestatus =`aws cloudfront get-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --id $INVALIDATE_ID | $JQ '.Invalidation.Status'`
         counter=`expr $counter + 1`
         if [[ $counter -gt $COUNTER_LIMIT ]] ; then
             echo "Invalidation does not complete with in 180 seconds. Please check the GUI mode."

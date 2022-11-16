@@ -70,7 +70,7 @@ ebstemplate=""
 #AWS_S3_BUCKET=""
 #AWS_S3_SOURCE_SYNC_PATH=""
 CFCACHE="false"
-AWS_CLOUD_FRONT_ID=""
+# AWS_CLOUD_FRONT_ID=""
 
 # Variables for Lambda 
 #AWS_LAMBDA_DEPLOY_TYPE=""

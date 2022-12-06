@@ -649,12 +649,12 @@ deploy_s3bucket() {
 	cat /etc/mime.types  | grep -i map
 	cat /etc/mime.types  | grep -i ttf
 	if [ "$CFCACHE" = "true" ]; then
-        # caching is enabled, so set the cache control's max age
-        S3_CACHE_OPTIONS="--cache-control max-age=0,s-maxage=86400"     
+		# caching is enabled, so set the cache control's max age
+		S3_CACHE_OPTIONS="--cache-control max-age=0,s-maxage=86400"     
 		echo "*** Deploying with Cloudfront Cache enabled ***"  
 	else
-        # caching is disabled, so set the cache control to never cache
-     	S3_CACHE_OPTIONS="--cache-control private,no-store,no-cache,must-revalidate,max-age=0"
+		# caching is disabled, so set the cache control to never cache
+		S3_CACHE_OPTIONS="--cache-control private,no-store,no-cache,must-revalidate,max-age=0"
 		echo "*** Deploying with Cloudfront Cache disabled ***"  
 	fi
 

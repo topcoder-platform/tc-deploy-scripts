@@ -649,10 +649,13 @@ deploy_s3bucket() {
 	cat /etc/mime.types  | grep -i map
 	cat /etc/mime.types  | grep -i ttf
 	if [ "$CFCACHE" = "true" ]; then
- 		S3_CACHE_OPTIONS="--cache-control private,no-store,no-cache,must-revalidate,max-age=0"
-		echo "*** Deploying with Cloudfront Cache disabled ***"       
+		# caching is enabled, so set the cache control's max age
+		S3_CACHE_OPTIONS="--cache-control max-age=0,s-maxage=86400"     
+		echo "*** Deploying with Cloudfront Cache enabled ***"  
 	else
-        S3_CACHE_OPTIONS="--cache-control max-age=0,s-maxage=86400"
+		# caching is disabled, so set the cache control to never cache
+		S3_CACHE_OPTIONS="--cache-control private,no-store,no-cache,must-revalidate,max-age=0"
+		echo "*** Deploying with Cloudfront Cache disabled ***"  
 	fi
 
 	S3_OPTIONS="--exclude '*.txt' --exclude '*.js' --exclude '*.css'"
@@ -721,7 +724,7 @@ check_invalidation_status() {
 
 invalidate_cf_cache()
 {
-    if [ "$CFCACHE" = "true" ]; then
+    #if [ "$CFCACHE" = "true" ]; then
          if [ -z $AWS_CLOUD_FRONT_ID ]; then
             echo "Based on header applicaiton has invalidated"
             echo "Skipped which is based on AWS cloudfront ID.Kindly raise request to configure cloud front ID in deployment configuration"
@@ -730,7 +733,7 @@ invalidate_cf_cache()
             INVALIDATE_ID=`aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*' | $JQ '.Invalidation.Id'`
             check_invalidation_status "$INVALIDATE_ID"
          fi
-    fi
+    #fi
 }
 
 download_envfile()

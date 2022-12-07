@@ -724,7 +724,7 @@ check_invalidation_status() {
 
 invalidate_cf_cache()
 {
-    if [ "$CFCACHE" = "true" ]; then
+    #if [ "$CFCACHE" = "true" ]; then
          if [ -z $AWS_CLOUD_FRONT_ID ]; then
             echo "Based on header applicaiton has invalidated"
             echo "Skipped which is based on AWS cloudfront ID.Kindly raise request to configure cloud front ID in deployment configuration"
@@ -733,7 +733,7 @@ invalidate_cf_cache()
             INVALIDATE_ID=`aws cloudfront create-invalidation --distribution-id $AWS_CLOUD_FRONT_ID --paths '/*' | $JQ '.Invalidation.Id'`
             check_invalidation_status "$INVALIDATE_ID"
          fi
-    fi
+    #fi
 }
 
 download_envfile()

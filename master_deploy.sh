@@ -310,8 +310,8 @@ ECS_template_create_register() {
     #Container readonlyRootFilesystem
     if [ -z $AWS_ECS_READONLY_ROOTFILESYSTEM ];
     then
-        log "No ECS readonlyRootFilesystem defined. Going with default value as false"
-        AWS_ECS_READONLY_ROOTFILESYSTEM=false
+        log "No ECS readonlyRootFilesystem defined. Going with default value as true"
+        AWS_ECS_READONLY_ROOTFILESYSTEM=true
         template=$(echo $template | jq --argjson readonlyRootFilesystem $AWS_ECS_READONLY_ROOTFILESYSTEM '.containerDefinitions[0].readonlyRootFilesystem=$readonlyRootFilesystem')
     else 
         template=$(echo $template | jq --argjson readonlyRootFilesystem $AWS_ECS_READONLY_ROOTFILESYSTEM '.containerDefinitions[0].readonlyRootFilesystem=$readonlyRootFilesystem')

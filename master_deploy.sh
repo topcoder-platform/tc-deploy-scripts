@@ -307,17 +307,6 @@ ECS_template_create_register() {
     template=$(echo $template | jq --arg image $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_REPOSITORY:$ECS_TAG '.containerDefinitions[0].image=$image')
     log "ECR Image name updated"
 
-    #Container readonlyRootFilesystem
-    if [ -z $AWS_ECS_READONLY_ROOTFILESYSTEM ];
-    then
-        log "No ECS readonlyRootFilesystem defined. Going with default value as true"
-        AWS_ECS_READONLY_ROOTFILESYSTEM=true
-        template=$(echo $template | jq --argjson readonlyRootFilesystem $AWS_ECS_READONLY_ROOTFILESYSTEM '.containerDefinitions[0].readonlyRootFilesystem=$readonlyRootFilesystem')
-    else 
-        template=$(echo $template | jq --argjson readonlyRootFilesystem $AWS_ECS_READONLY_ROOTFILESYSTEM '.containerDefinitions[0].readonlyRootFilesystem=$readonlyRootFilesystem')
-    fi
-    log "ECS readonlyRootFilesystem updated."
-
     #Container Memory reservation
     if [ -z $AWS_ECS_CONTAINER_MEMORY_RESERVATION ];
     then

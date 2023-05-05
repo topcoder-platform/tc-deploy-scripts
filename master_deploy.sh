@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#Variable Declaration
+#Variable Declaration 
 JQ="jq --raw-output --exit-status"
 DEPLOYMENT_TYPE=""
 ENV=""

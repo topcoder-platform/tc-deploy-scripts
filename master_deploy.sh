@@ -18,6 +18,7 @@ SHARED_PROPERTY_FILENAME=""
 TAG=""
 SEC_LIST=""
 SECPS_LIST=""
+ARG_SECPS_LIST=""
 #COUNTER_LIMIT=12
 
 if [ -z "$COUNTER_LIMIT" ]; then
@@ -399,6 +400,29 @@ ECS_template_create_register() {
             IFS=$o  
         done
     fi
+    if [ -z $ARG_SECPS_LIST ];
+    then
+        log "No ps file provided"
+    else
+        Buffer_seclist=$(echo $ARG_SECPS_LIST | sed 's/,/ /g')
+        for listname in $Buffer_seclist;
+        do
+            local o=$IFS
+            IFS=$(echo -en "\n\b")
+            k=$listname
+            echo $k
+            aws ssm get-parameters-by-path --path $k --query "Parameters[*].{Name:Name}" > paramnames.json
+            ###paramnames=$(cat paramnames.json | jq -r .[].Name | rev | cut -d / -f 1 | rev)
+            for s in $(cat paramnames.json | jq -r .[].Name )
+            do
+                varname=$(echo $s | rev | cut -d / -f 1 | rev)
+                varvalue="arn:aws:ssm:$AWS_REGION:$AWS_ACCOUNT_ID:parameter$s"
+                psenvaddition "$varname" "$varvalue"
+                #echo "$varname" "$varvalue"
+            done
+            IFS=$o  
+        done
+    fi    
     log "Environment has updated"
 
     # Log Configuration
@@ -876,6 +900,9 @@ input_parsing_validation()
             l)
                 SECPS_LIST=$OPTARG
                 ;;
+            j)
+                ARG_SECPS_LIST=$OPTARG
+                ;;                
             t)
                 TAG=$OPTARG
                 ;;

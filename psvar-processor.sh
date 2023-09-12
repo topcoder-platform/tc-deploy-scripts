@@ -48,6 +48,17 @@ create_json_file_format()
 #    rm -rf fetched_parameters.json    
 }
 
+create_jsonso_file_format()
+{
+    file_name=$1
+    fetch_path=$2
+    echo $fetch_path
+    echo $file_name
+    echo "aws ssm get-parameters --with-decryption --name $fetch_path | jq '.Parameters | .[] | .Value' | jq '.|fromjson'"
+    aws ssm get-parameters --with-decryption --name $fetch_path | jq '.Parameters | .[] | .Value' | jq '.|fromjson' >${file_name}.json
+#    rm -rf fetched_parameters.json    
+}
+
 fetching_specific_path()
 {   
     type_to_fetch=$1
@@ -67,7 +78,11 @@ fetching_specific_path()
     if [ "$type_to_fetch" == "appjson" ]
     then
         create_json_file_format $fname $fpath
-    fi    
+    fi 
+    if [ "$type_to_fetch" == "appjsonso" ]
+    then
+        create_jsonso_file_format $fname $fpath
+    fi        
 }
 
 fetching_multiple_path()
@@ -90,7 +105,11 @@ fetching_multiple_path()
         if [ "$type_to_fetch" == "appjson" ]
         then
             create_json_file_format $fname $fpath
-        fi                
+        fi 
+        if [ "$type_to_fetch" == "appjsonso" ]
+        then
+            create_jsonso_file_format $fname $fpath
+        fi                        
     done
 }
 
@@ -136,7 +155,7 @@ then
         fi
         if [ -z $PS_PATH_LIST ];
         then
-            echo "Info: no path list"
+            echo "Info: no path list provided. So skipping pathlist"
         else        
             fetching_multiple_path  $APP_TYPE_LOWERCASE
         fi        
@@ -153,7 +172,7 @@ then
         fi
         if [ -z $PS_PATH_LIST ];
         then
-            echo "Info: no path list"
+            echo "Info: no path list provided. So skipping pathlist"
         else        
             fetching_multiple_path $APP_TYPE_LOWERCASE
         fi          
@@ -170,7 +189,24 @@ then
         fi
         if [ -z $PS_PATH_LIST ];
         then
-            echo "Info: no path list"
+            echo "Info: no path list provided. So skipping pathlist"
+        else        
+            fetching_multiple_path $APP_TYPE_LOWERCASE
+        fi          
+fi
+
+if [ "$APP_TYPE_LOWERCASE" == "appjsonso" ]
+then
+        echo "json file configuration"
+        if [ -z $PS_PATH ];
+        then
+            echo "Info: no ps path"
+        else        
+            fetching_specific_path $APP_TYPE_LOWERCASE
+        fi
+        if [ -z $PS_PATH_LIST ];
+        then
+            echo "Info: no path list provided. So skipping pathlist"
         else        
             fetching_multiple_path $APP_TYPE_LOWERCASE
         fi          

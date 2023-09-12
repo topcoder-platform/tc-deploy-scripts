@@ -881,7 +881,7 @@ deploy_lambda_package()
 # Input Collection and validation
 input_parsing_validation()
 {
-    while getopts .d:h:i:e:l:t:v:s:p:g:c:m:. OPTION
+    while getopts .d:h:i:e:l:j:t:v:s:p:g:c:m:. OPTION
     do
         case $OPTION in
             d)

@@ -13,3 +13,6 @@ do
     aws ssm put-parameter --cli-input-json file://cli-input.json
 done
 IFS=$o  
+
+[ -f upload_object.json ] && rm -f upload_object.json
+[ -f cli-input.json ] && rm -f cli-input.json

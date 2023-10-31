@@ -836,30 +836,50 @@ configure_Lambda_template()
     if [ "$AWS_LAMBDA_DEPLOY_TYPE" == "SLS" ]
     then
         mkdir -p /home/circleci/project/config
-        Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
-	    #envvars=$( cat $listname.json | jq  -c ' .app_var ')
+       if [ -z $SEC_LIST ];
+       then
+            log "No ps path provided"
+       else
+            Buffer_seclist=$(echo $SEC_LIST | sed 's/,/ /g')
+            #envvars=$( cat $listname.json | jq  -c ' .app_var ')
 
-        for listname in $Buffer_seclist;
-        do
-            o=$IFS
-            IFS=$(echo -en "\n\b")
-            envvars=$( cat $listname.json | jq  -c ' . ')	     
-            echo "$envvars" > /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
-            sed -i 's/\\n/\\\\n/g' /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
+            for listname in $Buffer_seclist;
+            do
+                local o=$IFS
+                IFS=$(echo -en "\n\b")
+                envvars=$( cat $listname.json | jq  -c ' . ')	     
+                echo "$envvars" > /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
+                sed -i 's/\\n/\\\\n/g' /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
+                IFS=$o 
+        done
+       fi
 
-            #yq r $listname.json  >$listname.yml
-            #a=serverless.yml
-            #b="$listname.json"
-            #python -c "import sys; from ruamel.yaml import YAML; yaml = YAML(); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(open('$b','r')); cfg['Resources']['tcdevhandler']['Properties']['Environment']['Variables']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
-            #python -c "import sys; from ruamel.yaml import YAML; yaml = YAML(); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(open('$b','r')); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
-            #python -c "import sys , json , ruamel.yaml , cStringIO; jsondata = cStringIO.StringIO(); yaml = ruamel.yaml.YAML(); yaml.explicit_start = True; data = json.load(open('$b','r'), object_pairs_hook=ruamel.yaml.comments.CommentedMap) ; ruamel.yaml.scalarstring.walk_tree(data) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(jsondata.getvalue()); cfg['Resources']['tcdevhandler']['Properties']['Environment']['Variables']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
-            #python -c "import sys , json , ruamel.yaml , cStringIO; jsondata = cStringIO.StringIO(); yaml = ruamel.yaml.YAML(); yaml.explicit_start = True; data = json.load(open('$b','r'), object_pairs_hook=ruamel.yaml.comments.CommentedMap) ; ruamel.yaml.scalarstring.walk_tree(data) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env = yaml.load(jsondata.getvalue()); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml', 'w'))"
-            #python -c "import sys , json , ruamel.yaml ; from io import BytesIO as StringIO ; jsondata = StringIO(); yaml = ruamel.yaml.YAML(); yaml.explicit_start = True; data = json.load(open('$b','r'), object_pairs_hook=ruamel.yaml.comments.CommentedMap) ; ruamel.yaml.scalarstring.walk_tree(data) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env= yaml.load(jsondata.getvalue()); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml','w'))"
-            #python -c "import sys , json , ruamel.yaml ; from io import BytesIO as StringIO ; jsondata = StringIO(); yaml = ruamel.yaml.YAML(); data = json.load(open('$b','r')) ; yaml.dump(data, jsondata); cfg = yaml.load(open('$a','r')); cfg_env= yaml.load(jsondata.getvalue()); cfg['provider']['environment']=cfg_env['app_var'] ; yaml.dump(cfg, open('appeneded.yaml','w'))"
-            #mv -f appeneded.yaml serverless.yml 
-       done
-       IFS=$o 
+       if [ -z $ARG_SECPS_LIST ];
+       then
+            log "No ps path provided"
+       else
+            Buffer_seclist=$(echo $ARG_SECPS_LIST | sed 's/,/ /g')
+            for listname in $Buffer_seclist;
+            do
+                local o=$IFS
+                IFS=$(echo -en "\n\b")
+                k=$listname
+                echo $k
+                aws ssm get-parameters-by-path --with-decryption --path $k --query "Parameters[*].{Name:Name, Value:Value}" >fetched_parameters.json
+                cat fetched_parameters.json | jq  -r ' . |= (map({ (.Name): .Value }) | add)' | sed -e "s~$k/~~" >paramwithvalue.json
+                envvars=$( cat paramwithvalue.json | jq  -c ' . ')	     
+                echo "$envvars" > /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
+                sed -i 's/\\n/\\\\n/g' /home/circleci/project/config/$AWS_LAMBDA_STAGE.json
+                ###paramnames=$(cat paramnames.json | jq -r .[].Name | rev | cut -d / -f 1 | rev)
+                IFS=$o  
+            done
+        fi 
+
+
     fi
+
+
+
 }
 
 deploy_lambda_package()

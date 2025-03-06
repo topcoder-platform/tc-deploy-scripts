@@ -261,6 +261,19 @@ volumeupdate() {
   let volcount=volcount+1
 }
 
+efsvolumeupdate() {
+  volname=$1
+  sourcepath=$2
+  mountpath=$3
+  filesystemid=$4
+  #volumes update
+  template=$(echo $template | jq --arg volname $volname --arg sourcepath $sourcepath --arg volcount $volcount --arg filesystemid $filesystemid '.volumes[$volcount |tonumber] |= .+ { name: $volname, efsVolumeConfiguration: { fileSystemId: $filesystemid, rootDirectory: $sourcepath } }')
+  #mount point update
+  template=$(echo $template | jq --arg volname $volname --arg mountpath $mountpath --arg volcount $volcount '.containerDefinitions[0].mountPoints[$volcount |tonumber] |= .+ { sourceVolume: $volname, containerPath: $mountpath }')
+
+  let volcount=volcount+1
+}  
+
 ECS_Container_HealthCheck_integ() {
     HealthCheckCmd="$1"
 
@@ -446,6 +459,25 @@ ECS_template_create_register() {
         done
         log "ECS volumes are mapped"
     fi 
+
+    #efs volume update
+    if [ -z $AWS_ECS_VOLUMES_EFS ];
+    then
+        echo "No ECS EFS volume mapping defined"
+    else
+        Buffer_volumes=$(echo $AWS_ECS_VOLUMES_EFS | sed 's/,/ /g')
+        for v1 in $Buffer_volumes;
+        do
+            volname=$( echo $v1 | cut -d ':' -f 1 ) 
+            sourcepath=$( echo $v1 | cut -d ':' -f 2 ) 
+            mountpath=$( echo $v1 | cut -d ':' -f 3 ) 
+            filesystemid=$( echo $v1 | cut -d ':' -f 4 )
+            #mntpermission=$( echo $v1 | cut -d ':' -f 4 ) 
+            #volumeupdate $volname $sourcepath $mountpath $mntpermission fileSystemId
+            efsvolumeupdate $volname $sourcepath $mountpath $filesystemid
+        done
+        log "ECS EFS volumes are mapped"
+    fi
 
     #Container health check update
     if [ -z "$AWS_ECS_CONTAINER_HEALTH_CMD" ];

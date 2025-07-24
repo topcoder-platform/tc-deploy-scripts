@@ -231,10 +231,13 @@ psenvaddition() {
     envname=$1
     envvalue=$2
     #echo "env value before" $envvalue
+    isEnvExist=$( echo $template | grep -c "$envname")
+    if [ $isEnvExist -eq 0 ]; then
     set -f
     template=$(echo $template | jq --arg name "$envname" --arg value "$envvalue" --arg psenvcount $psenvcount '.containerDefinitions[0].secrets[$psenvcount |tonumber] |= .+ { name: $name, valueFrom: $value  }')
     set +f
     let psenvcount=psenvcount+1
+    fi
     #echo "psenvcount after ---------" $psenvcount
     #echo "envvalue after ---------" $envvalue
 }

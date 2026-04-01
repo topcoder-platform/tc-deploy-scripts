@@ -499,7 +499,7 @@ ECS_template_create_register() {
 	# ephemeral volume update
     if [ -z $AWS_ECS_EPHEMERAL_VOLUMES ];
     then
-        echo "No ECS volume mapping defined"
+        echo "No ECS EPHEMERAL volume mapping defined"
     else
         Buffer_volumes=$(echo $AWS_ECS_EPHEMERAL_VOLUMES | sed 's/,/ /g')
         for v1 in $Buffer_volumes;
@@ -508,7 +508,7 @@ ECS_template_create_register() {
             mountpath=$( echo $v1 | cut -d ':' -f 2 ) 
             ephemeralvolumeupdate $volname $mountpath
         done
-        log "ECS volumes are mapped"
+        log "ECS EPHEMERAL volumes are mapped"
     fi 
 
     #Container health check update
@@ -530,7 +530,8 @@ ECS_template_create_register() {
 	# Updating ephemeral Storage
 	if [ -z $AWS_ECS_EPHEMERAL_STORAGE_SIZE ];
 	then
-		echo "No FARGATE CPU defined. Going with default value 1024"   
+		echo "No AWS_ECS_EPHEMERAL_STORAGE_SIZE defined. " 
+	else
 		template=$(echo $template | jq --argjson ephemeralStorageSize $AWS_ECS_EPHEMERAL_STORAGE_SIZE '.ephemeralStorage |= .+ { sizeInGiB: $ephemeralStorageSize}')
 	fi
 	

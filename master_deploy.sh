@@ -277,6 +277,20 @@ efsvolumeupdate() {
   let volcount=volcount+1
 }  
 
+ephemeralvolumeupdate() {
+  volname=$1
+  sourcepath=$2
+  mountpath=$3
+  #mntpermission=$4
+  #echo $volname $sourcepath $mountpath $mntpermission
+  #volumes update
+  template=$(echo $template | jq --arg volname $volname --arg volcount $volcount '.volumes[$volcount |tonumber] |= .+ { name: $volname, host: { } }')
+  #mount point update
+  template=$(echo $template | jq --arg volname $volname --arg mountpath $mountpath --arg volcount $volcount '.containerDefinitions[0].mountPoints[$volcount |tonumber] |= .+ { sourceVolume: $volname, containerPath: $mountpath }')
+
+  let volcount=volcount+1
+}
+
 ECS_Container_HealthCheck_integ() {
     HealthCheckCmd="$1"
 
@@ -482,6 +496,21 @@ ECS_template_create_register() {
         log "ECS EFS volumes are mapped"
     fi
 
+	# ephemeral volume update
+    if [ -z $AWS_ECS_EPHEMERAL_VOLUMES ];
+    then
+        echo "No ECS volume mapping defined"
+    else
+        Buffer_volumes=$(echo $AWS_ECS_EPHEMERAL_VOLUMES | sed 's/,/ /g')
+        for v1 in $Buffer_volumes;
+        do
+            volname=$( echo $v1 | cut -d ':' -f 1 ) 
+            mountpath=$( echo $v1 | cut -d ':' -f 2 ) 
+            ephemeralvolumeupdate $volname $mountpath
+        done
+        log "ECS volumes are mapped"
+    fi 
+
     #Container health check update
     if [ -z "$AWS_ECS_CONTAINER_HEALTH_CMD" ];
     then
@@ -498,6 +527,13 @@ ECS_template_create_register() {
         ECS_Container_cmd_integ "$AWS_ECS_CONTAINER_CMD"    
     fi
 
+	# Updating ephemeral Storage
+	if [ -z $AWS_ECS_EPHEMERAL_STORAGE_SIZE ];
+	then
+		echo "No FARGATE CPU defined. Going with default value 1024"   
+		template=$(echo $template | jq --argjson ephemeralStorageSize $AWS_ECS_EPHEMERAL_STORAGE_SIZE '.ephemeralStorage |= .+ { sizeInGiB: $ephemeralStorageSize}')
+	fi
+	
     #updating data based on ECS deploy type
     if [ "$ECS_TEMPLATE_TYPE" == "FARGATE" ]
     then

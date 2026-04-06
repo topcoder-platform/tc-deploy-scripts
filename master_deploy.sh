@@ -454,6 +454,8 @@ ECS_template_create_register() {
         done
     fi    
     log "Environment has updated"
+    
+    set -f
 
     # Log Configuration
     logconfiguration
@@ -588,6 +590,7 @@ ECS_template_create_register() {
             return 1
         fi
     fi
+    set +f    
 }
 
 ECS_deploy_cluster() {

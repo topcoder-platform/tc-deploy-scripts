@@ -545,6 +545,7 @@ ECS_template_create_register() {
         # Updating the compatibiltiy
         #template=$(echo $template | jq --arg requiresCompatibilities EC2 '.requiresCompatibilities[0] |= .+ $requiresCompatibilities')
         template=$(echo $template | jq --arg requiresCompatibilities FARGATE '.requiresCompatibilities[.requiresCompatibilities| length] |= .+ $requiresCompatibilities')
+		template=$(echo $template |jq 'del(.requiresCompatibilities[] | select(. == "EC2"))')
         # Updating Fargate CPU
         if [ -z $AWS_ECS_FARGATE_CPU ];
         then

@@ -279,8 +279,8 @@ efsvolumeupdate() {
 
 ephemeralvolumeupdate() {
   volname=$1
-  sourcepath=$2
-  mountpath=$3
+  #sourcepath=$2
+  mountpath=$2
   #mntpermission=$4
   #echo $volname $sourcepath $mountpath $mntpermission
   #volumes update

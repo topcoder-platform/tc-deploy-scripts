@@ -277,6 +277,20 @@ efsvolumeupdate() {
   let volcount=volcount+1
 }  
 
+ephemeralvolumeupdate() {
+  volname=$1
+  #sourcepath=$2
+  mountpath=$2
+  #mntpermission=$4
+  #echo $volname $sourcepath $mountpath $mntpermission
+  #volumes update
+  template=$(echo $template | jq --arg volname $volname --arg volcount $volcount '.volumes[$volcount |tonumber] |= .+ { name: $volname, host: { } }')
+  #mount point update
+  template=$(echo $template | jq --arg volname $volname --arg mountpath $mountpath --arg volcount $volcount '.containerDefinitions[0].mountPoints[$volcount |tonumber] |= .+ { sourceVolume: $volname, containerPath: $mountpath }')
+
+  let volcount=volcount+1
+}
+
 ECS_Container_HealthCheck_integ() {
     HealthCheckCmd="$1"
 
@@ -482,6 +496,21 @@ ECS_template_create_register() {
         log "ECS EFS volumes are mapped"
     fi
 
+	# ephemeral volume update
+    if [ -z $AWS_ECS_EPHEMERAL_VOLUMES ];
+    then
+        echo "No ECS EPHEMERAL volume mapping defined"
+    else
+        Buffer_volumes=$(echo $AWS_ECS_EPHEMERAL_VOLUMES | sed 's/,/ /g')
+        for v1 in $Buffer_volumes;
+        do
+            volname=$( echo $v1 | cut -d ':' -f 1 ) 
+            mountpath=$( echo $v1 | cut -d ':' -f 2 ) 
+            ephemeralvolumeupdate $volname $mountpath
+        done
+        log "ECS EPHEMERAL volumes are mapped"
+    fi 
+
     #Container health check update
     if [ -z "$AWS_ECS_CONTAINER_HEALTH_CMD" ];
     then
@@ -498,6 +527,14 @@ ECS_template_create_register() {
         ECS_Container_cmd_integ "$AWS_ECS_CONTAINER_CMD"    
     fi
 
+	# Updating ephemeral Storage
+	if [ -z $AWS_ECS_EPHEMERAL_STORAGE_SIZE ];
+	then
+		echo "No AWS_ECS_EPHEMERAL_STORAGE_SIZE defined. " 
+	else
+		template=$(echo $template | jq --argjson ephemeralStorageSize $AWS_ECS_EPHEMERAL_STORAGE_SIZE '.ephemeralStorage |= .+ { sizeInGiB: $ephemeralStorageSize}')
+	fi
+	
     #updating data based on ECS deploy type
     if [ "$ECS_TEMPLATE_TYPE" == "FARGATE" ]
     then
@@ -508,6 +545,7 @@ ECS_template_create_register() {
         # Updating the compatibiltiy
         #template=$(echo $template | jq --arg requiresCompatibilities EC2 '.requiresCompatibilities[0] |= .+ $requiresCompatibilities')
         template=$(echo $template | jq --arg requiresCompatibilities FARGATE '.requiresCompatibilities[.requiresCompatibilities| length] |= .+ $requiresCompatibilities')
+		template=$(echo $template |jq 'del(.requiresCompatibilities[] | select(. == "EC2"))')
         # Updating Fargate CPU
         if [ -z $AWS_ECS_FARGATE_CPU ];
         then

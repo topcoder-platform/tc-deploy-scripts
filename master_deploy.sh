@@ -46,6 +46,7 @@ TEMPLATE_SKELETON_FILE="base_template_v2.json"
 APP_IMAGE_NAME=""
 DEPLOYCATEGORY=""
 ECSCLI_ENVFILE="api.env"
+bottlerocket_ami_id=$(fetch_bottlerocket_ami_id $AWS_REGION)
 
 # Variables specific to EBS
 
@@ -130,6 +131,22 @@ configure_aws_cli() {
 configure_docker_private_login() {
 	aws s3 cp "s3://appirio-platform-$ENV_CONFIG/services/common/dockercfg" ~/.dockercfg
 }
+
+# Function to fetch the latest Bottlerocket AMI ID
+fetch_bottlerocket_ami_id() {
+    local region=${1:-us-east-1} # Default to us-east-1 if no region is provided
+
+    BOTTLE_ROCKET_AMI_ID=$(aws ssm get-parameters --names /aws/service/bottlerocket/aws-ecs-1/latest/amazon-linux-2/recommended/image_id --region $region --query 'Parameters[0].[Value]' --output text)
+
+    if [ -z "$BOTTLE_ROCKET_AMI_ID" ]; then
+        log "Failed to fetch Bottlerocket AMI ID for region $region"
+        return 1
+    else
+        log "Fetched Bottlerocket AMI ID for region $region: $BOTTLE_ROCKET_AMI_ID"
+        echo $BOTTLE_ROCKET_AMI_ID
+    fi
+}
+
 
 # ECS Deployment Functions
 ECS_push_ecr_image() {

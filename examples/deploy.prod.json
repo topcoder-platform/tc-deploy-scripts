@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "environment": "prod",
+  "accountId": "222222222222",
+  "region": "us-east-1",
+  "deployRoleArn": "arn:aws:iam::222222222222:role/example-v6-prod-deploy",
+  "taskRoleArn": "arn:aws:iam::222222222222:role/example-v6-prod-task",
+  "executionRoleArn": "arn:aws:iam::222222222222:role/example-v6-prod-execution",
+  "cluster": "example-cluster",
+  "service": "example-v6",
+  "taskFamily": "example-v6",
+  "circleciOrgId": "00000000-0000-0000-0000-000000000001",
+  "circleciProjectId": "00000000-0000-0000-0000-000000000002",
+  "repository": "github.com/example/example-v6",
+  "branch": "master",
+  "images": {
+    "example-v6": "example-v6"
+  }
+}

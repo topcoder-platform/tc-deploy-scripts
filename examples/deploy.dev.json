@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 2,
+  "environment": "dev",
+  "accountId": "111111111111",
+  "region": "us-east-1",
+  "deployRoleArn": "arn:aws:iam::111111111111:role/example-v6-dev-deploy",
+  "taskRoleArn": "arn:aws:iam::111111111111:role/example-v6-dev-task",
+  "executionRoleArn": "arn:aws:iam::111111111111:role/example-v6-dev-execution",
+  "cluster": "example-cluster",
+  "service": "example-v6",
+  "taskFamily": "example-v6",
+  "circleciOrgId": "00000000-0000-0000-0000-000000000001",
+  "circleciProjectId": "00000000-0000-0000-0000-000000000002",
+  "repository": "github.com/example/example-v6",
+  "branch": "develop",
+  "images": {"example-v6": "example-v6"}
+}

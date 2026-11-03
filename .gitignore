@@ -9,3 +9,11 @@ target/*
 /target/
 .settings
 *.swp
+__pycache__/
+*.pyc
+awsenvconf
+*_env
+.env
+.env.*
+.npmrc
+*.tar

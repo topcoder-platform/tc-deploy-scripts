@@ -115,6 +115,16 @@ class ManifestTests(unittest.TestCase):
     def test_wrong_account_role(self):
         self.check_invalid('executionRoleArn', 'arn:aws:iam::222222222222:role/other')
 
+    def test_absent_task_role_does_not_grant_runtime_permissions(self):
+        m = manifest()
+        m['taskRoleArn'] = None
+        with tempfile.TemporaryDirectory() as temp:
+            p = Path(temp) / 'manifest.json'
+            p.write_text(json.dumps(m))
+            self.assertIsNone(d.read_manifest(p)['taskRoleArn'])
+        self.assertEqual(d.role_policy(m)['Statement'][-1]['Resource'], [m['executionRoleArn']])
+        self.check_invalid('taskRoleArn', '')
+
     def test_shell_injection_is_invalid_data(self):
         self.check_invalid('service', 'x; touch /tmp/marker')
 

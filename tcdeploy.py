@@ -46,11 +46,14 @@ def read_manifest(path):
                 'circleciOrgId', 'circleciProjectId', 'repository', 'branch', 'images'}
     require(isinstance(m, dict) and set(m) == required, 'Manifest fields must match the v2 schema')
     require(m['schemaVersion'] == 2 and m['environment'] in ('dev', 'prod'), 'Unsupported manifest version/environment')
-    for key in required - {'schemaVersion', 'images'}:
+    for key in required - {'schemaVersion', 'images', 'taskRoleArn'}:
         require(isinstance(m[key], str) and m[key], 'Manifest requires nonempty string fields')
     require(re.fullmatch(r'[0-9]{12}', m['accountId']), 'Invalid account ID')
     require(re.fullmatch(r'(us|eu|ap|ca|sa|me|af|il|mx)-[a-z]+-[0-9]', m['region']), 'Unsupported AWS commercial region')
     for key in ('deployRoleArn', 'taskRoleArn', 'executionRoleArn'):
+        if key == 'taskRoleArn' and m[key] is None:
+            continue
+        require(isinstance(m[key], str), 'Role must be an ARN or an absent task role')
         require(re.fullmatch(r'arn:aws:iam::' + m['accountId'] + r':role/[A-Za-z0-9_+=,.@/-]+', m[key]), 'Role must belong to the configured account')
     require(len({m[k] for k in ('deployRoleArn', 'taskRoleArn', 'executionRoleArn')}) == 3, 'Deployment, task and execution roles must be distinct')
     for key in ('cluster', 'service', 'taskFamily'):
@@ -91,7 +94,7 @@ def role_policy(m):
          'Resource': arn(m, 'ecs', 'task-definition/' + m['taskFamily'] + ':*')},
         {'Effect': 'Allow', 'Action': ['ecs:ListTasks', 'ecs:DescribeTasks'], 'Resource': '*',
          'Condition': {'ArnEquals': {'ecs:cluster': arn(m, 'ecs', 'cluster/' + m['cluster'])}}},
-        {'Effect': 'Allow', 'Action': 'iam:PassRole', 'Resource': [m['taskRoleArn'], m['executionRoleArn']],
+        {'Effect': 'Allow', 'Action': 'iam:PassRole', 'Resource': [r for r in (m['taskRoleArn'], m['executionRoleArn']) if r],
          'Condition': {'StringEquals': {'iam:PassedToService': 'ecs-tasks.amazonaws.com'}}}
     ]}
 

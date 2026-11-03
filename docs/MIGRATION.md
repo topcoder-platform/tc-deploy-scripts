@@ -8,7 +8,7 @@ Merging this PR does not change pinned v1 consumers or installed IAM policies. *
 2. Create a manifest with exact identifiers from that inspection. Generate IAM documents using `tcdeploy.py policies`; install them through infrastructure review. Keep the explicit secret-access/role-chaining deny in the role policy and preferably use the generated permissions as its permissions boundary too. Remove unrelated policies and audit resource-based grants. The deployer needs no infrastructure-creation permissions.
 3. Restrict PassRole to the exact task/execution roles (use JSON `null` for `taskRoleArn` when the existing task has no application role; do not add one just to deploy). Give the execution role only its runtime parameter/secret ARNs and necessary KMS keys. Pre-provision runtime bindings and defaults through administrator-owned infrastructure. v2 preserves references without fetching values/types: missing bindings fail at startup and trigger rollback.
 4. Enable unconditional ECR tag immutability and supported basic/enhanced scan-on-push. Enable ECS circuit-breaker rollback, positive desired capacity and explicit task health checks. Remove plaintext secret environment values and `RESET_DB` secret bindings. Use non-root runtime images. Bootstrap/infrastructure updates remain separate from code deployment.
-5. Commit non-secret `deploy/dev.json`. Use an exact `develop` or `dev` branch for dev and `master` for prod source/config refs. Examples intentionally do not guess real targets. Do not put keys, client secrets, passwords or parameter values in manifests.
+5. Commit non-secret `deploy/dev.json`. Use an exact `develop` or `dev` branch for dev and the exact reviewed `master` or legacy `prod` branch for production source/config refs. Examples intentionally do not guess real targets. Do not put keys, client secrets, passwords or parameter values in manifests.
 6. Prepare a reviewed executor with Python >=3.10 with the `tarfile` extraction-filter security backport, AWS CLI v2, Docker/Buildx, Git and trusted CA certificates. Pin its digest and the suite's full reviewed commit in service configuration. No runtime tool/package installation on the credential host. Replace template placeholders with literal reviewed values, not caller-overridable pipeline parameters.
 7. Split build/test and deploy using `examples/circleci-v2.yml`. Remove `org-global`, old helper copies, all `source awsenvconf` / `source *_env`, SSM build/deploy/QA retrieval, and unpinned host installs. Use restricted dev/prod contexts with no broker/static AWS secrets, production approval and serialization. Verify OIDC v3 availability; restrict fork secret passing and SSH debugging. Pin/download the entire suite.
 8. Build committed source separately with `build_image.py`. Transfer only image archives through job-specific workflow workspaces. Do not cache the checkout/credential directories. The helper rejects known secret filenames and excludes untracked generated credentials; it does not replace a full secret scanner. Never build after deployment authentication.
@@ -26,19 +26,19 @@ For private packages, use a separate package-read-only identity and BuildKit sec
 
 ## Production and concurrency
 
-Use a separately reviewed prod manifest/role/context, exact prod account, protected `master` source/config refs and approval gate. Validate IAM denies before use. Promote reviewed suite/executor commits and retain a previous healthy revision/digest. ECS performs circuit-breaker rollback; failed/timeout deployments require inspection rather than blindly overwriting a newer release.
+Use a separately reviewed prod manifest/role/context, exact prod account, protected exact `master` or legacy `prod` source/config refs and approval gate. Validate IAM denies before use. Promote reviewed suite/executor commits and retain a previous healthy revision/digest. ECS performs circuit-breaker rollback; failed/timeout deployments require inspection rather than blindly overwriting a newer release.
 
 Serial groups prevent normal CI overlap. ECS UpdateService has no general compare-and-swap for revision, so before/after checks cannot eliminate every out-of-band race. Restrict other writers and coordinate operator changes.
 
-## External adoption work this PR cannot perform
+## Adoption work and consumer PRs
 
 - Install/restrict OIDC/IAM/contexts; retire broker grants; rotate exposed secrets and revoke sessions.
-- Change each service's CircleCI configuration/manifests, runtime bindings, scanner/immutability settings and ECS health/rollback configuration.
+- Review and merge the [consumer PRs](ECS_MIGRATION_PRS.md), then apply runtime bindings, scanner/immutability settings and ECS health/rollback changes through infrastructure administration.
 - Remove production DB-reset options/startup entrypoints from groups/identity/review and remove schema-reset privileges from runtime DB users. v2 rejects reset-enabled image/task environments and any RESET_DB secret binding in **both** environments. Controlled dev resets belong outside deployment.
 - Preserve custom migration, CloudFormation, scan and monitoring checks; see `SERVICES.md`. Do not overwrite custom pipelines with the basic example.
 - Pin forums' four cross-repository client clones. A generic builder cannot prove remote code downloaded inside a Dockerfile; Dockerfiles remain trusted build code.
 
-These are adoption gates, not claims that existing services or live IAM policies changed by merging the PR.
+The linked consumer PRs prepare repository changes; none is a claim that live ECS/IAM/CircleCI state has changed. Infrastructure and real dev acceptance remain adoption gates.
 
 ## Audit coverage
 

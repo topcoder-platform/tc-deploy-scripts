@@ -123,6 +123,25 @@ SESSION_POLICY = {'Version': '2012-10-17', 'Statement': [
         'ecs:DescribeServices', 'ecs:DescribeTaskDefinition', 'ecs:RegisterTaskDefinition',
         'ecs:TagResource', 'ecs:ListTagsForResource', 'ecs:UpdateService', 'ecs:ListTasks', 'ecs:DescribeTasks', 'iam:PassRole'], 'Resource': '*'}]}
 
+# Reviewed service adapters may retain migration/health/CloudFormation ownership
+# gates. These capabilities are not exposed as deployment CLI flags. Their IAM
+# role and boundary must separately scope every extra action to that service.
+ADAPTER_ACTIONS = frozenset({
+    'ecs:RunTask', 'ecs:DeregisterTaskDefinition',
+    'elasticloadbalancing:DescribeTargetHealth',
+    'inspector2:ListCoverage', 'inspector2:ListFindings',
+    'cloudformation:DescribeStacks', 'cloudformation:UpdateStack',
+    'cloudformation:DescribeStackEvents', 'cloudformation:DescribeStackResources',
+})
+
+
+def session_policy(additional_actions=()):
+    require(set(additional_actions) <= ADAPTER_ACTIONS, 'Unsupported custom deployment capability')
+    result = deepcopy(SESSION_POLICY)
+    result['Statement'][1]['Action'] += sorted(set(additional_actions))
+    require(len(compact(result)) <= 2048, 'Session policy exceeds the STS limit')
+    return result
+
 
 def clean_environment(region):
     # Never inherit profiles, endpoint overrides, SDK credential providers, proxies,
@@ -161,7 +180,13 @@ class AWS:
         self.region = region
 
     def call(self, service, operation, **parameters):
-        require(service in ('sts', 'ecs', 'ecr'), 'This deployer cannot call secret or infrastructure APIs')
+        adapter_reads = {
+            'cloudformation': {'describe-stacks', 'update-stack', 'describe-stack-events', 'describe-stack-resources'},
+            'elbv2': {'describe-target-health'},
+            'inspector2': {'list-coverage', 'list-findings'},
+        }
+        require(service in ('sts', 'ecs', 'ecr') or operation in adapter_reads.get(service, set()),
+                'This deployer cannot call secret or unreviewed infrastructure APIs')
         # JSON on stdin avoids credentials and task configuration in argv or files.
         command = ['aws', service, operation, '--region', self.region,
                    '--output', 'json', '--no-cli-pager', '--cli-input-json', 'file:///dev/stdin']
@@ -169,12 +194,12 @@ class AWS:
         return json.loads(output) if output.strip() else {}
 
 
-def authenticate(m, token):
+def authenticate(m, token, additional_actions=()):
     require(isinstance(token, str) and len(token) > 100, 'CIRCLE_OIDC_TOKEN_V3 is required; no Auth0 or ambient-credential fallback')
     aws = AWS(m['region'])
     response = aws.call('sts', 'assume-role-with-web-identity', RoleArn=m['deployRoleArn'],
         RoleSessionName='tc-deploy-' + str(int(time.time())), WebIdentityToken=token,
-        DurationSeconds=3600, Policy=compact(SESSION_POLICY))
+        DurationSeconds=3600, Policy=compact(session_policy(additional_actions)))
     credentials = response.get('Credentials', {})
     for key in ('AccessKeyId', 'SecretAccessKey', 'SessionToken', 'Expiration'):
         require(isinstance(credentials.get(key), str) and credentials[key], 'STS returned incomplete temporary credentials')

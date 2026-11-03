@@ -171,6 +171,19 @@ class ManifestTests(unittest.TestCase):
 
 
 class CredentialTests(unittest.TestCase):
+    def test_adapter_capabilities_cannot_remove_secret_deny(self):
+        policy = d.session_policy(d.ADAPTER_ACTIONS)
+        self.assertEqual(policy['Statement'][0], d.SESSION_POLICY['Statement'][0])
+        self.assertLessEqual(len(d.compact(policy)), 2048)
+        self.assertIn('ecs:RunTask', policy['Statement'][1]['Action'])
+        self.assertNotIn('ecs:RunTask', d.SESSION_POLICY['Statement'][1]['Action'])
+
+    def test_adapter_cannot_request_secret_access_or_role_chaining(self):
+        for action in ('ssm:GetParameter', 'secretsmanager:GetSecretValue', 'sts:AssumeRole',
+                       'cloudformation:CreateStack', '*'):
+            with self.subTest(action=action), self.assertRaises(d.DeployError):
+                d.session_policy([action])
+
     def response(self):
         m = manifest()
         return [{'Credentials': {'AccessKeyId': 'ASIA' + 'A' * 16, 'SecretAccessKey': 'dummy-secret',

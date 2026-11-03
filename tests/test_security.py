@@ -171,6 +171,13 @@ class ManifestTests(unittest.TestCase):
 
 
 class CredentialTests(unittest.TestCase):
+    def test_ecs_service_parameter_reaches_the_cli_without_name_collision(self):
+        with patch.object(d, 'execute', return_value='{}') as execute:
+            d.AWS('us-east-1').call('ecs', 'update-service', cluster='cluster', service='application')
+        command, environment, payload = execute.call_args.args
+        self.assertEqual(command[:3], ['aws', 'ecs', 'update-service'])
+        self.assertEqual(json.loads(payload), {'cluster': 'cluster', 'service': 'application'})
+
     def test_adapter_capabilities_cannot_remove_secret_deny(self):
         policy = d.session_policy(d.ADAPTER_ACTIONS)
         self.assertEqual(policy['Statement'][0], d.SESSION_POLICY['Statement'][0])

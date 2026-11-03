@@ -179,16 +179,16 @@ class AWS:
         self.env = dict(env or clean_environment(region))
         self.region = region
 
-    def call(self, service, operation, **parameters):
+    def call(self, api_service, operation, **parameters):
         adapter_reads = {
             'cloudformation': {'describe-stacks', 'update-stack', 'describe-stack-events', 'describe-stack-resources'},
             'elbv2': {'describe-target-health'},
             'inspector2': {'list-coverage', 'list-findings'},
         }
-        require(service in ('sts', 'ecs', 'ecr') or operation in adapter_reads.get(service, set()),
+        require(api_service in ('sts', 'ecs', 'ecr') or operation in adapter_reads.get(api_service, set()),
                 'This deployer cannot call secret or unreviewed infrastructure APIs')
         # JSON on stdin avoids credentials and task configuration in argv or files.
-        command = ['aws', service, operation, '--region', self.region,
+        command = ['aws', api_service, operation, '--region', self.region,
                    '--output', 'json', '--no-cli-pager', '--cli-input-json', 'file:///dev/stdin']
         output = execute(command, self.env, compact(parameters), timeout=120)
         return json.loads(output) if output.strip() else {}

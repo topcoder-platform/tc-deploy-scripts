@@ -8,8 +8,8 @@ Read [the migration guide](docs/MIGRATION.md), [the Auth0/AWS explanation](docs/
 
 ## Requirements
 
-- A reviewed, digest-pinned Linux executor containing Python >=3.12, AWS CLI v2, Docker/Buildx, Git and system CA certificates. No package installation in the credential-bearing job. This deployer has no external Python dependencies.
-- CircleCI Cloud with `CIRCLE_OIDC_TOKEN_V3`, protected `develop`/`master` refs, and restricted deployment contexts containing no broker/static AWS credentials.
+- A reviewed, digest-pinned Linux executor containing Python >=3.10 with the `tarfile` extraction-filter security backport, AWS CLI v2, Docker/Buildx, Git and system CA certificates. No package installation in the credential-bearing job. This deployer has no external Python dependencies.
+- CircleCI Cloud with `CIRCLE_OIDC_TOKEN_V3`, protected `develop` (or `dev`)/`master` refs, and restricted deployment contexts containing no broker/static AWS credentials.
 - Separate per-service/per-environment deploy, task and execution roles, and a reviewed non-secret manifest.
 - Existing immutable ECR repositories with scan-on-push, ECS circuit-breaker rollback, positive desired capacity, explicit task health checks, and pre-provisioned runtime secret references.
 

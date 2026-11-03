@@ -124,6 +124,19 @@ class ManifestTests(unittest.TestCase):
     def test_production_branch_guard(self):
         self.check_invalid('environment', 'prod')
 
+    def test_legacy_dev_branch_has_exact_trust(self):
+        m = manifest()
+        m['branch'] = 'dev'
+        with tempfile.TemporaryDirectory() as temp:
+            p = Path(temp) / 'manifest.json'
+            p.write_text(json.dumps(m))
+            self.assertEqual(d.read_manifest(p)['branch'], 'dev')
+        subject = next(iter(d.trust_policy(m)['Statement'][0]['Condition']['StringLike'].values()))
+        self.assertIn(':checkout-ref:refs/heads/dev:', subject)
+        self.assertTrue(subject.endswith(':config-ref:refs/heads/dev'))
+        self.check_invalid('branch', 'feature/deploy')
+        self.check_invalid('branch', 'master')
+
     def test_unknown_fields(self):
         self.check_invalid('parameterPath', '/config/app')
 

@@ -58,7 +58,8 @@ def read_manifest(path):
     for key in ('circleciOrgId', 'circleciProjectId'):
         require(re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', m[key]), 'CircleCI IDs must be UUIDs')
     require(re.fullmatch(r'github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', m['repository']), 'Expected exact github.com/owner/repository')
-    require(m['branch'] == ('master' if m['environment'] == 'prod' else 'develop'), 'Deploy only develop to dev and master to prod')
+    allowed_branches = ('master',) if m['environment'] == 'prod' else ('develop', 'dev')
+    require(m['branch'] in allowed_branches, 'Deploy only the reviewed dev/develop branch to dev and master to prod')
     require(isinstance(m['images'], dict) and 1 <= len(m['images']) <= 10, 'Configure one to ten container/repository pairs')
     for container, repository in m['images'].items():
         require(re.fullmatch(r'[A-Za-z0-9_-]{1,255}', container), 'Invalid container name')

@@ -1,9 +1,5 @@
-#!/bin/bash
-set -eo pipefail
-UPLOAD_FILENAME=$1
-PARAMETER_PATH=$2
-
-aws ssm put-parameter \
-    --name $PARAMETER_PATH \
-    --type SecureString \
-    --value file://$UPLOAD_FILENAME
+#!/usr/bin/env bash
+set +x
+set -euo pipefail
+echo 'Secret provisioning is an administrator/IaC responsibility, separate from deployment. This legacy helper is disabled in v2; see docs/MIGRATION.md.' >&2
+exit 2

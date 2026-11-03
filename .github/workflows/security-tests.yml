@@ -1,0 +1,22 @@
+name: Deployment security tests
+on:
+  pull_request:
+  push:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests -v
+      - name: Check shell syntax
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess
+          for path in pathlib.Path('.').rglob('*.sh'):
+              subprocess.run(['bash', '-n', str(path)], check=True)
+          PY

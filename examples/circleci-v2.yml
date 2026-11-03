@@ -1,0 +1,104 @@
+# TEMPLATE: replace both reviewed executor digests, suite commit, APPNAME,
+# context names and manifest paths before adopting. Never use trigger parameters
+# for code/executor pins. Custom release/migration/health gates must be retained.
+version: 2.1
+executors:
+  reviewed:
+    docker:
+      - image: your-reviewed-public-ci-executor@sha256:REPLACE_WITH_REVIEWED_64_HEX_DIGEST
+    environment:
+      APPNAME: example-v6
+      TC_DEPLOY_SCRIPTS_SHA: REPLACE_WITH_REVIEWED_40_HEX_COMMIT
+commands:
+  checkout-suite:
+    steps:
+      - run:
+          name: Fetch and verify the reviewed deployment suite
+          command: |
+            set -euo pipefail
+            [[ "$TC_DEPLOY_SCRIPTS_SHA" =~ ^[0-9a-f]{40}$ ]]
+            git init --quiet /tmp/tc-deploy-scripts
+            git -C /tmp/tc-deploy-scripts remote add origin https://github.com/topcoder-platform/tc-deploy-scripts.git
+            git -C /tmp/tc-deploy-scripts fetch --quiet --depth 1 origin "$TC_DEPLOY_SCRIPTS_SHA"
+            git -C /tmp/tc-deploy-scripts checkout --quiet --detach FETCH_HEAD
+            test "$(git -C /tmp/tc-deploy-scripts rev-parse HEAD)" = "$TC_DEPLOY_SCRIPTS_SHA"
+jobs:
+  build:
+    executor: reviewed
+    steps:
+      - checkout
+      - setup_remote_docker
+      - checkout-suite
+      # Add the service's existing quality gates here, without deploy secrets.
+      # Prefer tests inside the Docker build or another credential-free job.
+      - run:
+          name: Build committed source without deployment credentials
+          command: |
+            python3 -I /tmp/tc-deploy-scripts/build_image.py --image "${APPNAME}:candidate"
+            mkdir -p /tmp/release
+            docker save --output /tmp/release/image.tar "${APPNAME}:candidate"
+      - persist_to_workspace:
+          root: /tmp/release
+          paths: [image.tar]
+  deploy:
+    executor: reviewed
+    parameters:
+      environment:
+        type: enum
+        enum: [dev, prod]
+    environment:
+      DEPLOY_MANIFEST: deploy/<< parameters.environment >>.json
+    steps:
+      - checkout
+      - setup_remote_docker
+      - checkout-suite
+      - attach_workspace:
+          at: /tmp/release
+      - run:
+          name: Promote a scanned digest using OIDC and no parameter permissions
+          no_output_timeout: 45m
+          command: |
+            set +x
+            set -euo pipefail
+            docker load --input /tmp/release/image.tar
+            /tmp/tc-deploy-scripts/master_deploy.sh --manifest "$DEPLOY_MANIFEST" \
+              --image "${APPNAME}=${APPNAME}:candidate"
+workflows:
+  release:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only: [develop, master]
+            tags:
+              ignore: /.*/
+      - deploy:
+          name: deploy-dev
+          environment: dev
+          context: v6-dev-deploy
+          serial-group: << pipeline.project.slug >>/deploy-dev
+          requires: [build]
+          filters:
+            branches:
+              only: develop
+            tags:
+              ignore: /.*/
+      - approve-prod:
+          type: approval
+          requires: [build]
+          filters:
+            branches:
+              only: master
+            tags:
+              ignore: /.*/
+      - deploy:
+          name: deploy-prod
+          environment: prod
+          context: v6-prod-deploy
+          serial-group: << pipeline.project.slug >>/deploy-prod
+          requires: [approve-prod]
+          filters:
+            branches:
+              only: master
+            tags:
+              ignore: /.*/

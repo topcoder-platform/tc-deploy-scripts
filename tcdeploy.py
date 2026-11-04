@@ -313,6 +313,31 @@ def verify_running(aws, m, definition, images, desired):
     return len(tasks) >= desired
 
 
+def scan_counts(scan, m, repository, digest):
+    """Accept an omitted summary only when ECR explicitly returns no findings."""
+    findings = scan['imageScanFindings']
+    if 'findingSeverityCounts' not in findings:
+        # ECR can omit the optional counts map for a clean image. An absent
+        # summary alone is not evidence of a clean scan: require empty result
+        # lists, no remaining page, and the exact requested image identity.
+        image = scan.get('imageId')
+        require(scan.get('registryId') == m['accountId']
+                and scan.get('repositoryName') == repository
+                and isinstance(image, dict) and image.get('imageDigest') == digest,
+                'Empty scan response does not identify the requested image')
+        lists = [findings[key] for key in ('findings', 'enhancedFindings') if key in findings]
+        require(lists and all(isinstance(items, list) and not items for items in lists)
+                and scan.get('nextToken') in (None, ''),
+                'Missing image scan severity counts without complete empty findings')
+        return {}
+    counts = findings['findingSeverityCounts']
+    severities = {'INFORMATIONAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'UNDEFINED'}
+    require(isinstance(counts, dict) and set(counts) <= severities
+            and all(type(count) is int and count >= 0 for count in counts.values()),
+            'Invalid image scan severity counts')
+    return counts
+
+
 class Publisher:
     def __init__(self, aws, m, directory):
         self.aws, self.m = aws, m
@@ -383,8 +408,7 @@ class Publisher:
                 else:
                     completed = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                 require(0 <= (datetime.now(timezone.utc) - completed).total_seconds() < 86400, 'Image scan must have completed within the last 24 hours')
-                counts = findings.get('findingSeverityCounts')
-                require(isinstance(counts, dict), 'Missing image scan severity counts')
+                counts = scan_counts(scan, self.m, repository, digest)
                 require(not any(counts.get(level, 0) for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'UNDEFINED')), 'Image scan exceeds the release threshold')
                 return uri + '@' + digest
             require(status in ('IN_PROGRESS', 'PENDING', 'ACTIVE'), 'Image scan failed or is unsupported')

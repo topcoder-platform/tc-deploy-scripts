@@ -491,6 +491,86 @@ class PublisherTests(unittest.TestCase):
         with self.assertRaises(d.DeployError):
             self.publish()
 
+    def empty_scan(self, status='ACTIVE'):
+        # Shape returned by ECR for an enhanced scan with zero findings.
+        self.scan = {'registryId': self.m['accountId'], 'repositoryName': 'example-v6',
+            'imageId': {'imageDigest': DIGEST}, 'imageScanStatus': {'status': status},
+            'imageScanFindings': {'imageScanCompletedAt': datetime.now(timezone.utc).isoformat(),
+                                  'findings': []}}
+
+    def test_completed_empty_scan_without_counts(self):
+        for status in ('ACTIVE', 'COMPLETE'):
+            for key in ('findings', 'enhancedFindings'):
+                with self.subTest(status=status, key=key):
+                    self.empty_scan(status)
+                    self.scan['imageScanFindings'].pop('findings')
+                    self.scan['imageScanFindings'][key] = []
+                    result, _ = self.publish()
+                    self.assertTrue(result.endswith('@' + DIGEST))
+
+    def test_missing_counts_and_missing_findings_rejected(self):
+        self.empty_scan()
+        self.scan['imageScanFindings'].pop('findings')
+        with self.assertRaises(d.DeployError):
+            self.publish()
+
+    def test_missing_counts_with_nonempty_or_malformed_findings_rejected(self):
+        for key in ('findings', 'enhancedFindings'):
+            for value in ([{'severity': 'HIGH'}], [{'severity': 'LOW'}], None, {}, ''):
+                with self.subTest(key=key, value=value):
+                    self.empty_scan()
+                    self.scan['imageScanFindings'][key] = value
+                    with self.assertRaises(d.DeployError):
+                        self.publish()
+
+    def test_empty_first_page_without_counts_rejected(self):
+        self.empty_scan()
+        self.scan['nextToken'] = 'another-page'
+        with self.assertRaises(d.DeployError):
+            self.publish()
+
+    def test_empty_scan_must_match_requested_image(self):
+        for key, wrong in [('registryId', '222222222222'), ('repositoryName', 'other'),
+                           ('imageId', {'imageDigest': 'sha256:' + 'f' * 64})]:
+            for value in (wrong, None):
+                with self.subTest(key=key, value=value):
+                    self.empty_scan()
+                    if value is None:
+                        self.scan.pop(key)
+                    else:
+                        self.scan[key] = value
+                    with self.assertRaises(d.DeployError):
+                        self.publish()
+
+    def test_empty_scan_still_requires_fresh_completion(self):
+        for timestamp in ('2000-01-01T00:00:00Z',
+                          (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()):
+            with self.subTest(timestamp=timestamp):
+                self.empty_scan()
+                self.scan['imageScanFindings']['imageScanCompletedAt'] = timestamp
+                with self.assertRaises(d.DeployError):
+                    self.publish()
+
+    def test_empty_scan_rejects_malformed_image_identity(self):
+        for image in (None, [], ''):
+            with self.subTest(image=image):
+                self.empty_scan()
+                self.scan['imageId'] = image
+                with self.assertRaises(d.DeployError):
+                    self.publish()
+
+    def test_empty_findings_do_not_override_failed_status_or_summary(self):
+        self.empty_scan('FAILED')
+        with self.assertRaises(d.DeployError):
+            self.publish()
+        for counts in ({'HIGH': 1}, None, [], {'LOW': -1}, {'LOW': True},
+                       {'LOW': '0'}, {'UNKNOWN': 0}):
+            with self.subTest(counts=counts):
+                self.empty_scan()
+                self.scan['imageScanFindings']['findingSeverityCounts'] = counts
+                with self.assertRaises(d.DeployError):
+                    self.publish()
+
     def test_severity_gate(self):
         for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'UNDEFINED'):
             with self.subTest(level=level):

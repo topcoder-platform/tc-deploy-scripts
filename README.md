@@ -44,6 +44,8 @@ In a separately authorized deploy job, load the workflow-specific image archive,
 
 The deployer verifies account/role, live service configuration, source label, ECR immutability, local/remote configuration digest, a scan completed within 24 hours with no MEDIUM/HIGH/CRITICAL/UNDEFINED findings, and the exact healthy running revision/digests. Only selected images change; roles, secret references, sidecars, resources, volumes and health checks remain intact. Non-root runtime images are required and `RESET_DB` cannot be enabled. The source label is a consistency check, not cryptographic build provenance; protect the pipeline and artifact writers.
 
+ECR may omit its optional severity-count map for a clean image. That response is accepted only after the same completion/freshness checks, with an exact registry/repository/digest match, explicitly empty findings lists, and no remaining page. An absent summary without that evidence, nonempty findings without a summary, or malformed counts fails closed. This requires no additional IAM permissions or changes to registry scanning. See the [ECR response schema](https://docs.aws.amazon.com/AmazonECR/latest/APIReference/API_ImageScanFindings.html).
+
 Use a unique CircleCI build number when retrying publication to immutable tags. A failed rollout remains a failure even if ECS rolls back. The script never blindly reverts over another deployment.
 
 ## Tests

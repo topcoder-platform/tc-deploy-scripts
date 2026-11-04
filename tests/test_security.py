@@ -62,6 +62,7 @@ class FakeAWS:
         self.m = m
         self.calls = []
         self.task = task(m)
+        self.tags = [{'key': 'owner', 'value': 'team'}]
         self.service = service(m)
         self.registered = None
         self.before = None
@@ -74,10 +75,12 @@ class FakeAWS:
         if (api, operation) == ('ecs', 'describe-services'):
             return {'services': [deepcopy(self.service)]}
         if (api, operation) == ('ecs', 'describe-task-definition'):
-            return {'taskDefinition': deepcopy(self.registered or self.task), 'tags': [{'key': 'owner', 'value': 'team'}]}
+            return {'taskDefinition': deepcopy(self.registered or self.task), 'tags': deepcopy(self.tags)}
         if (api, operation) == ('ecs', 'register-task-definition'):
+            if 'tags' in params and not params['tags']:
+                raise d.DeployError('Tags can not be empty.')
             self.registered = deepcopy(params)
-            self.registered.pop('tags')
+            self.tags = self.registered.pop('tags', [])
             self.registered.update(status='ACTIVE', revision=2, taskDefinitionArn=self.task['taskDefinitionArn'][:-1] + '2')
             return {'taskDefinition': deepcopy(self.registered)}
         if (api, operation) == ('ecs', 'update-service'):
@@ -344,6 +347,24 @@ print('ok')
         self.assertNotIn('dummy-secret', str(caught.exception))
         self.assertIn('AccessDenied', str(caught.exception))
 
+    def test_aws_error_identifies_operation_without_exposing_payloads(self):
+        result = subprocess.CompletedProcess([], 1, 'response-secret',
+            'An error occurred (ClientException) request-secret response-secret')
+        with patch.object(d.subprocess, 'run', return_value=result):
+            with self.assertRaises(d.DeployError) as caught:
+                d.AWS('us-east-1').call('ecs', 'register-task-definition',
+                                     containerDefinitions=[{'environment': [{'value': 'request-secret'}]}])
+        self.assertIn('AWS ecs register-task-definition:', str(caught.exception))
+        self.assertTrue(str(caught.exception).endswith(': ClientException'))
+        self.assertNotIn('request-secret', str(caught.exception))
+        self.assertNotIn('response-secret', str(caught.exception))
+
+    def test_aws_scan_error_preserves_retry_suffix(self):
+        with patch.object(d, 'execute', side_effect=d.DeployError('External command failed: ScanNotFoundException')):
+            with self.assertRaises(d.DeployError) as caught:
+                d.AWS('us-east-1').call('ecr', 'describe-image-scan-findings')
+        self.assertTrue(str(caught.exception).endswith(': ScanNotFoundException'))
+
 
 class DeploymentTests(unittest.TestCase):
     def setUp(self):
@@ -362,6 +383,53 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(self.aws.registered['executionRoleArn'], original['executionRoleArn'])
         self.assertEqual(self.aws.registered['containerDefinitions'][0]['secrets'], original['containerDefinitions'][0]['secrets'])
         self.assertEqual(self.aws.registered['volumes'], original['volumes'])
+
+    def test_untagged_task_omits_tags_and_passes_readback(self):
+        for include_tags_field in (True, False):
+            with self.subTest(include_tags_field=include_tags_field):
+                self.aws = FakeAWS(self.m)
+                self.aws.tags = []
+                call = self.aws.call
+                def describe_without_tags(api, operation, **params):
+                    response = call(api, operation, **params)
+                    if operation == 'describe-task-definition' and not include_tags_field:
+                        response.pop('tags')
+                    return response
+                with patch.object(self.aws, 'call', side_effect=describe_without_tags):
+                    result = self.deploy()
+                self.assertTrue(result['taskDefinition'].endswith(':2'))
+                registration = next(p for _, op, p in self.aws.calls if op == 'register-task-definition')
+                self.assertNotIn('tags', registration)
+                self.assertEqual(self.aws.tags, [])
+
+    def test_existing_tags_and_empty_tag_values_are_preserved(self):
+        self.aws.tags = [{'key': 'owner', 'value': 'team'}, {'key': 'environment', 'value': ''}]
+        original = deepcopy(self.aws.tags)
+        self.deploy()
+        registration = next(p for _, op, p in self.aws.calls if op == 'register-task-definition')
+        self.assertEqual(registration['tags'], original)
+
+    def test_malformed_tags_stop_before_publication(self):
+        for tags in (None, {}, '', False):
+            with self.subTest(tags=tags):
+                self.aws.tags = tags
+                with self.assertRaises(d.DeployError):
+                    self.deploy()
+                self.assertEqual(self.publisher.calls, [])
+
+    def test_changed_tags_stop_before_service_update(self):
+        for original, changed in [([], [{'key': 'unexpected', 'value': 'tag'}]),
+                                  ([{'key': 'owner', 'value': 'team'}], [])]:
+            with self.subTest(original=original, changed=changed):
+                self.aws = FakeAWS(self.m)
+                self.aws.tags = original
+                def tamper(api, operation, params):
+                    if operation == 'describe-task-definition' and self.aws.registered:
+                        self.aws.tags = changed
+                self.aws.before = tamper
+                with self.assertRaises(d.DeployError):
+                    self.deploy()
+                self.assertNotIn('update-service', [op for _, op, _ in self.aws.calls])
 
     def test_fargate_role_never_overwritten(self):
         self.aws.task['executionRoleArn'] = 'arn:aws:iam::111111111111:role/ecsTaskExecutionRole'

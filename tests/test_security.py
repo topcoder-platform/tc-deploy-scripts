@@ -672,6 +672,7 @@ class DeploymentTests(unittest.TestCase):
 
 class PublisherTests(unittest.TestCase):
     def setUp(self):
+        self.image_name = 'example-v6'
         self.m = manifest()
         self.aws = FakeAWS(self.m)
         self.publisher = d.Publisher(self.aws, self.m, '/tmp/dummy-docker-config')
@@ -687,7 +688,7 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(api, 'ecr')
         registry = self.publisher.registry
         if op == 'describe-repositories':
-            return {'repositories': [{'repositoryUri': registry + '/example-v6', 'imageTagMutability': self.mutability}]}
+            return {'repositories': [{'repositoryUri': registry + '/' + self.image_name, 'imageTagMutability': self.mutability}]}
         if op == 'get-authorization-token':
             return {'authorizationData': [{'proxyEndpoint': 'https://' + registry, 'authorizationToken': base64.b64encode(b'AWS:dummy-password').decode()}]}
         if op == 'describe-images':
@@ -700,7 +701,7 @@ class PublisherTests(unittest.TestCase):
 
     def publish(self):
         with patch.object(self.publisher, 'docker', return_value=json.dumps([self.info])) as docker, patch.object(self.aws, 'call', side_effect=self.ecr):
-            result = self.publisher.publish('example-v6', 'example:build', RELEASE, float('inf'))
+            result = self.publisher.publish(self.image_name, 'example:build', RELEASE, float('inf'))
         return result, docker
 
     def test_publish_verifies_digest_and_password_stdin(self):
@@ -760,7 +761,7 @@ class PublisherTests(unittest.TestCase):
 
     def empty_scan(self, status='ACTIVE'):
         # Shape returned by ECR for an enhanced scan with zero findings.
-        self.scan = {'registryId': self.m['accountId'], 'repositoryName': 'example-v6',
+        self.scan = {'registryId': self.m['accountId'], 'repositoryName': self.image_name,
             'imageId': {'imageDigest': DIGEST}, 'imageScanStatus': {'status': status},
             'imageScanFindings': {'imageScanCompletedAt': datetime.now(timezone.utc).isoformat(),
                                   'findings': []}}
@@ -844,6 +845,67 @@ class PublisherTests(unittest.TestCase):
                 self.scan['imageScanFindings']['findingSeverityCounts'] = {level: 1}
                 with self.assertRaises(d.DeployError):
                     self.publish()
+
+    def payload_publisher(self, policy='payload-dev-high-critical'):
+        self.image_name = 'payload-cms'
+        self.m.update(environment='dev', branch='develop',
+                      repository='github.com/topcoder-platform/payload-cms',
+                      service='payload-cms', taskFamily='payload-cms',
+                      images={'payload-cms': 'payload-cms'})
+        self.publisher = d.Publisher(self.aws, self.m, '/tmp/dummy-docker-config', scan_policy=policy)
+
+    def test_payload_dev_medium_findings_are_reported_and_allowed(self):
+        self.payload_publisher()
+        self.scan['imageScanFindings']['findingSeverityCounts'] = {'MEDIUM': 4, 'LOW': 1}
+        with patch('builtins.print') as report:
+            result, _ = self.publish()
+        self.assertTrue(result.endswith('@' + DIGEST))
+        report.assert_called_once_with('Payload dev image scan counts: {"MEDIUM":4,"LOW":1}', flush=True)
+
+    def test_payload_keeps_strict_policy_by_default(self):
+        self.payload_publisher('strict')
+        self.scan['imageScanFindings']['findingSeverityCounts'] = {'MEDIUM': 1}
+        with self.assertRaises(d.DeployError):
+            self.publish()
+
+    def test_payload_dev_policy_still_blocks_high_critical_and_undefined(self):
+        self.payload_publisher()
+        for level in ('CRITICAL', 'HIGH', 'UNDEFINED'):
+            with self.subTest(level=level), patch('builtins.print'):
+                self.scan['imageScanFindings']['findingSeverityCounts'] = {'MEDIUM': 4, level: 1}
+                with self.assertRaises(d.DeployError):
+                    self.publish()
+
+    def test_payload_dev_policy_rejects_other_targets_before_side_effects(self):
+        self.payload_publisher()
+        for changed in ({'environment': 'prod', 'branch': 'master'},
+                        {'environment': 'prod'}, {'branch': 'master'},
+                        {'repository': 'github.com/another-org/payload-cms'},
+                        {'repository': 'github.com/topcoder-platform/other-api'},
+                        {'service': 'other'}, {'taskFamily': 'other'},
+                        {'images': {'payload-cms': 'other'}},
+                        {'images': {'payload-cms': 'payload-cms', 'sidecar': 'other'}}):
+            with self.subTest(changed=changed):
+                with self.assertRaises(d.DeployError):
+                    d.Publisher(self.aws, {**self.m, **changed}, '/tmp/dummy',
+                                scan_policy='payload-dev-high-critical')
+        self.assertEqual(self.aws.calls, [])
+
+    def test_unknown_scan_policy_is_rejected(self):
+        for policy in ('HIGH', 'none', '', None, True):
+            with self.subTest(policy=policy), self.assertRaises(d.DeployError):
+                d.Publisher(self.aws, self.m, '/tmp/dummy', scan_policy=policy)
+        self.assertEqual(self.aws.calls, [])
+
+    def test_payload_dev_policy_preserves_scan_and_artifact_validation(self):
+        for check in ('test_stale_scan_rejected', 'test_failed_scan',
+                      'test_missing_counts_and_missing_findings_rejected',
+                      'test_empty_findings_do_not_override_failed_status_or_summary',
+                      'test_wrong_artifact_digest', 'test_mutable_tag_repository'):
+            with self.subTest(check=check), patch('builtins.print'):
+                self.setUp()
+                self.payload_publisher()
+                getattr(self, check)()
 
 
 class EntrypointTests(unittest.TestCase):

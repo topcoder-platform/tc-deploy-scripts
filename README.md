@@ -54,7 +54,7 @@ ECR may omit its optional severity-count map for a clean image. That response is
 
 Enhanced scanning also requires `inspector2:ListFindings` and `inspector2:ListCoverage` in the deployment role, its permissions boundary, and the STS session policy. The generated role policy limits these read-only actions to the deployment region. AWS does not support repository-level resource restrictions for these Inspector list actions, so they can read account-wide scan metadata in that region. No Inspector configuration/write actions or parameter/secret access are granted. Existing roles and boundaries must be updated through the private infrastructure repository before adopting this change. See [AWS enhanced-scanning permissions](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-enhanced-iam.html).
 
-Use a unique CircleCI build number when retrying publication to immutable tags. A failed rollout remains a failure even if ECS rolls back. The script never blindly reverts over another deployment.
+Use a unique CircleCI build number when retrying publication to immutable tags. ECR can return multiple image records when several tags share one digest; publication verification resolves the exact immutable release tag and checks its returned tag, image digest and configuration digest before scanning. A failed rollout remains a failure even if ECS rolls back. The script never blindly reverts over another deployment.
 
 ## Tests
 

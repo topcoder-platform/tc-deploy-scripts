@@ -208,7 +208,12 @@ class AWS:
         # JSON on stdin avoids credentials and task configuration in argv or files.
         command = ['aws', api_service, operation, '--region', self.region,
                    '--output', 'json', '--no-cli-pager', '--cli-input-json', 'file:///dev/stdin']
-        output = execute(command, self.env, compact(parameters), timeout=120)
+        try:
+            output = execute(command, self.env, compact(parameters), timeout=120)
+        except DeployError as exc:
+            # Identify the reviewed API operation, never its request parameters
+            # or raw CLI output. Keep the error-code suffix for retry handling.
+            raise DeployError(f'AWS {api_service} {operation}: {exc}') from None
         return json.loads(output) if output.strip() else {}
 
 
@@ -266,7 +271,11 @@ def task_request(m, task, tags, images):
     require(platform.get('cpuArchitecture', 'X86_64') == 'X86_64' and platform.get('operatingSystemFamily', 'LINUX') == 'LINUX', 'This release supports Linux/amd64 tasks only')
     require(set(images) == set(m['images']), 'Supply exactly the manifest image set')
     result = {k: deepcopy(v) for k, v in task.items() if k in TASK_FIELDS}
-    result['tags'] = deepcopy(tags)
+    require(isinstance(tags, list), 'Task tags must be a list')
+    # ECS rejects an explicitly empty tag list on registration. Omission keeps
+    # an untagged definition untagged; preserve every tag when any are present.
+    if tags:
+        result['tags'] = deepcopy(tags)
     counts = {name: 0 for name in images}
     for container in result['containerDefinitions']:
         validate_environment(container.get('environment', []))
@@ -463,8 +472,8 @@ def deploy(aws, m, locals_by_name, release, publisher):
     saved = aws.call('ecs', 'describe-task-definition', taskDefinition=target, include=['TAGS'])
     saved_request = {k: v for k, v in saved['taskDefinition'].items() if k in TASK_FIELDS}
     saved_request['tags'] = sorted(saved.get('tags', []), key=lambda t: t['key'])
-    request['tags'] = sorted(request['tags'], key=lambda t: t['key'])
-    require(saved_request == request,
+    expected_request = {**request, 'tags': sorted(request.get('tags', []), key=lambda t: t['key'])}
+    require(saved_request == expected_request,
             'Registered task configuration differs from requested configuration')
     current = read_service(aws, m)
     require(stable(current, definition), 'Concurrent deployment detected before service update')

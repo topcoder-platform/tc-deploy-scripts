@@ -694,7 +694,8 @@ class PublisherTests(unittest.TestCase):
         if op == 'describe-images':
             return {'imageDetails': [{'imageDigest': DIGEST}]}
         if op == 'batch-get-image':
-            return {'images': [{'imageManifest': json.dumps({'config': {'digest': self.digest_config}})}]}
+            return {'images': [{'imageId': {'imageTag': RELEASE, 'imageDigest': DIGEST},
+                                'imageManifest': json.dumps({'config': {'digest': self.digest_config}})}]}
         if op == 'describe-image-scan-findings':
             return self.scan
         raise AssertionError(op)
@@ -711,6 +712,38 @@ class PublisherTests(unittest.TestCase):
         self.assertNotIn('dummy-password', str(login.args))
         self.assertEqual(login.kwargs['input_text'], 'dummy-password')
         self.assertNotIn('AWS_ACCESS_KEY_ID', self.publisher.env)
+
+    def test_retry_with_multiple_tags_verifies_the_exact_release_tag(self):
+        # ECR can return one image record per tag for a digest lookup. A tag lookup
+        # must select only this release even when another tag names the same image.
+        def ecr(api, op, **params):
+            response = self.ecr(api, op, **params)
+            if op == 'batch-get-image':
+                if params['imageIds'] == [{'imageDigest': DIGEST}]:
+                    prior = deepcopy(response['images'][0])
+                    prior['imageId']['imageTag'] = SHA + '-122'
+                    response['images'].append(prior)
+                else:
+                    self.assertEqual(params['imageIds'], [{'imageTag': RELEASE}])
+            return response
+        with patch.object(self.publisher, 'docker', return_value=json.dumps([self.info])), patch.object(self.aws, 'call', side_effect=ecr):
+            result = self.publisher.publish(self.image_name, 'example:build', RELEASE, float('inf'))
+        self.assertTrue(result.endswith('@' + DIGEST))
+
+    def test_wrong_or_missing_remote_image_identity_is_rejected(self):
+        for identity in ({'imageDigest': DIGEST}, {'imageTag': RELEASE},
+                         {'imageTag': SHA + '-122', 'imageDigest': DIGEST},
+                         {'imageTag': RELEASE, 'imageDigest': 'sha256:' + 'f' * 64},
+                         None, []):
+            with self.subTest(identity=identity):
+                def ecr(api, op, **params):
+                    response = self.ecr(api, op, **params)
+                    if op == 'batch-get-image':
+                        response['images'][0]['imageId'] = identity
+                    return response
+                with patch.object(self.publisher, 'docker', return_value=json.dumps([self.info])), patch.object(self.aws, 'call', side_effect=ecr):
+                    with self.assertRaises(d.DeployError):
+                        self.publisher.publish(self.image_name, 'example:build', RELEASE, float('inf'))
 
     def test_wrong_artifact_digest(self):
         self.digest_config = 'sha256:' + 'f' * 64

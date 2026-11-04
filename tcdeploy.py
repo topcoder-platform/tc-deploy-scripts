@@ -466,10 +466,15 @@ class Publisher:
                                 imageIds=[{'imageTag': tag}]).get('imageDetails', [])
         require(len(details) == 1 and DIGEST.fullmatch(details[0].get('imageDigest', '')), 'ECR did not return a single image digest')
         digest = details[0]['imageDigest']
+        # Digest lookups can return one record per tag when a retry republishes
+        # the same image. Resolve this immutable release tag, then verify its digest.
         remote = self.aws.call('ecr', 'batch-get-image', repositoryName=repository,
-            imageIds=[{'imageDigest': digest}], acceptedMediaTypes=[
+            imageIds=[{'imageTag': tag}], acceptedMediaTypes=[
                 'application/vnd.docker.distribution.manifest.v2+json', 'application/vnd.oci.image.manifest.v1+json'])
         require(not remote.get('failures') and len(remote.get('images', [])) == 1, 'Cannot verify pushed image')
+        image_id = remote['images'][0].get('imageId', {})
+        require(isinstance(image_id, dict) and image_id.get('imageTag') == tag
+                and image_id.get('imageDigest') == digest, 'Pushed image identity differs from the release tag/digest')
         manifest = json.loads(remote['images'][0]['imageManifest'])
         require(manifest.get('config', {}).get('digest') == info['configDigest'], 'Pushed artifact differs from local image (multi-platform indexes are unsupported)')
         # Repositories must scan on push (basic or enhanced). No start_image_scan

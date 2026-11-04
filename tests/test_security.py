@@ -187,6 +187,20 @@ class ManifestTests(unittest.TestCase):
         passrole = d.role_policy(m)['Statement'][-1]
         self.assertEqual(passrole['Resource'], [m['taskRoleArn'], m['executionRoleArn']])
 
+    def test_enhanced_scan_permissions_are_read_only_and_region_limited(self):
+        m = manifest()
+        inspector = [s for s in d.role_policy(m)['Statement']
+                     if any(a.startswith('inspector2:') for a in s['Action'])]
+        self.assertEqual(inspector, [{'Effect': 'Allow',
+            'Action': ['inspector2:ListFindings', 'inspector2:ListCoverage'], 'Resource': '*',
+            'Condition': {'StringEquals': {'aws:RequestedRegion': m['region']}}}])
+        for policy in (d.session_policy(), d.session_policy(d.ADAPTER_ACTIONS)):
+            actions = policy['Statement'][1]['Action']
+            self.assertEqual({a for a in actions if a.startswith('inspector2:')},
+                             {'inspector2:ListFindings', 'inspector2:ListCoverage'})
+            self.assertEqual(len(actions), len(set(actions)))
+            self.assertLessEqual(len(d.compact(policy)), 2048)
+
 
 class CredentialTests(unittest.TestCase):
     def test_ecs_service_parameter_reaches_the_cli_without_name_collision(self):

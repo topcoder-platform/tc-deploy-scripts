@@ -95,6 +95,10 @@ def role_policy(m):
          'Resource': arn(m, 'ecs', 'task-definition/' + m['taskFamily'] + ':*')},
         {'Effect': 'Allow', 'Action': ['ecs:ListTasks', 'ecs:DescribeTasks'], 'Resource': '*',
          'Condition': {'ArnEquals': {'ecs:cluster': arn(m, 'ecs', 'cluster/' + m['cluster'])}}},
+        # ECR enhanced scan reads depend on these Inspector APIs. They do not
+        # support resource-level permissions; limit them to the deployment region.
+        {'Effect': 'Allow', 'Action': ['inspector2:ListFindings', 'inspector2:ListCoverage'], 'Resource': '*',
+         'Condition': {'StringEquals': {'aws:RequestedRegion': m['region']}}},
         {'Effect': 'Allow', 'Action': 'iam:PassRole', 'Resource': [r for r in (m['taskRoleArn'], m['executionRoleArn']) if r],
          'Condition': {'StringEquals': {'iam:PassedToService': 'ecs-tasks.amazonaws.com'}}}
     ]}
@@ -122,7 +126,8 @@ SESSION_POLICY = {'Version': '2012-10-17', 'Statement': [
         'ecr:BatchCheckLayerAvailability', 'ecr:InitiateLayerUpload', 'ecr:UploadLayerPart',
         'ecr:CompleteLayerUpload', 'ecr:PutImage', 'ecr:DescribeImageScanFindings',
         'ecs:DescribeServices', 'ecs:DescribeTaskDefinition', 'ecs:RegisterTaskDefinition',
-        'ecs:TagResource', 'ecs:ListTagsForResource', 'ecs:UpdateService', 'ecs:ListTasks', 'ecs:DescribeTasks', 'iam:PassRole'], 'Resource': '*'}]}
+        'ecs:TagResource', 'ecs:ListTagsForResource', 'ecs:UpdateService', 'ecs:ListTasks', 'ecs:DescribeTasks', 'iam:PassRole',
+        'inspector2:ListFindings', 'inspector2:ListCoverage'], 'Resource': '*'}]}
 
 # Reviewed service adapters may retain migration/health/CloudFormation ownership
 # gates. These capabilities are not exposed as deployment CLI flags. Their IAM
@@ -139,7 +144,7 @@ ADAPTER_ACTIONS = frozenset({
 def session_policy(additional_actions=()):
     require(set(additional_actions) <= ADAPTER_ACTIONS, 'Unsupported custom deployment capability')
     result = deepcopy(SESSION_POLICY)
-    result['Statement'][1]['Action'] += sorted(set(additional_actions))
+    result['Statement'][1]['Action'] += sorted(set(additional_actions) - set(result['Statement'][1]['Action']))
     require(len(compact(result)) <= 2048, 'Session policy exceeds the STS limit')
     return result
 

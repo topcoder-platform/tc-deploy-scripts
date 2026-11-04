@@ -54,4 +54,6 @@ Use a unique CircleCI build number when retrying publication to immutable tags. 
 python3 -m unittest discover -s tests -v
 ```
 
-Tests mock AWS/Docker and require no credentials, account, network or external Python packages. Passing them does not replace IAM simulation and a real dev rollout. GitHub CI runs them with read-only repository permissions.
+Tests mock cloud API calls and Docker and require no credentials, account, network or external Python packages. An offline AWS CLI parsing test runs when the CLI is installed; CI also runs the suite inside the pinned CircleCI executor with networking disabled. Passing these tests does not replace IAM simulation and a real dev rollout. GitHub CI runs them with read-only repository permissions.
+
+Subprocess input uses an anonymous Linux memory file so AWS CLI can reopen `file:///dev/stdin` during JSON parsing. Tokens and request bodies stay out of command arguments and named filesystem files; the input descriptor closes on success or failure. Regression tests exercise repeated reads using a real subprocess.

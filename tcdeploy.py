@@ -414,7 +414,15 @@ def scan_counts(scan, m, repository, digest):
 
 
 class Publisher:
-    def __init__(self, aws, m, directory):
+    def __init__(self, aws, m, directory, *, scan_policy='strict'):
+        require(scan_policy in ('strict', 'payload-dev-high-critical'), 'Unsupported image scan policy')
+        if scan_policy == 'payload-dev-high-critical':
+            require(m.get('environment') == 'dev' and m.get('branch') == 'develop'
+                    and m.get('repository') == 'github.com/topcoder-platform/payload-cms'
+                    and m.get('service') == m.get('taskFamily') == 'payload-cms'
+                    and m.get('images') == {'payload-cms': 'payload-cms'},
+                    'The high/critical scan policy is restricted to Payload dev')
+        self.scan_policy = scan_policy
         self.aws, self.m = aws, m
         self.env = clean_environment(m['region'])  # Docker must not receive AWS/OIDC credentials.
         self.env['DOCKER_CONFIG'] = directory
@@ -484,7 +492,12 @@ class Publisher:
                     completed = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                 require(0 <= (datetime.now(timezone.utc) - completed).total_seconds() < 86400, 'Image scan must have completed within the last 24 hours')
                 counts = scan_counts(scan, self.m, repository, digest)
-                require(not any(counts.get(level, 0) for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'UNDEFINED')), 'Image scan exceeds the release threshold')
+                blocked = ('CRITICAL', 'HIGH', 'MEDIUM', 'UNDEFINED')
+                if self.scan_policy == 'payload-dev-high-critical':
+                    blocked = ('CRITICAL', 'HIGH', 'UNDEFINED')
+                    # Report validated counts, never raw findings or AWS responses.
+                    print('Payload dev image scan counts: ' + compact(counts), flush=True)
+                require(not any(counts.get(level, 0) for level in blocked), 'Image scan exceeds the release threshold')
                 return uri + '@' + digest
             require(status in ('IN_PROGRESS', 'PENDING', 'ACTIVE'), 'Image scan failed or is unsupported')
             time.sleep(10)

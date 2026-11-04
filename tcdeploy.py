@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 
 class DeployError(Exception):
@@ -240,6 +241,7 @@ def authenticate(m, token, additional_actions=()):
 
 
 SECRET_ENV = re.compile(r'(PASSWORD|SECRET|TOKEN|ACCESS_KEY|PRIVATE_KEY|DATABASE_URL|POSTGRES_URL|IDENTITY_DB_URL)', re.I)
+PUBLIC_TOKEN_URLS = {'M2M_TOKEN_ISSUER', 'M2M_TOKEN_AUDIENCE', 'HUMAN_TOKEN_ISSUER'}
 DIGEST = re.compile(r'sha256:[0-9a-f]{64}')
 TASK_FIELDS = {'family', 'taskRoleArn', 'executionRoleArn', 'networkMode', 'containerDefinitions', 'volumes',
                'placementConstraints', 'requiresCompatibilities', 'cpu', 'memory', 'pidMode', 'ipcMode',
@@ -248,10 +250,28 @@ TASK_METADATA = {'taskDefinitionArn', 'revision', 'status', 'requiresAttributes'
                  'registeredAt', 'registeredBy', 'deregisteredAt'}
 
 
+def public_token_setting(name, value):
+    """Recognize specific public auth settings, never arbitrary TOKEN names."""
+    if name == 'TOKEN_CACHE_TIME':
+        return bool(re.fullmatch(r'[0-9]{1,10}', value)) and int(value) <= 2147483647
+    if name not in PUBLIC_TOKEN_URLS or len(value) > 2048 or any(c.isspace() for c in value):
+        return False
+    try:
+        url = urlsplit(value)
+        port = url.port
+        return (url.scheme == 'https' and bool(url.hostname) and url.username is None
+                and url.password is None and not url.query and not url.fragment
+                and (port is None or 1 <= port <= 65535))
+    except ValueError:
+        return False
+
+
 def validate_environment(entries):
     for entry in entries:
         name, value = entry['name'], entry['value']
-        require(not (SECRET_ENV.search(name) and value), 'Plaintext secret-like environment values are forbidden')
+        require(isinstance(name, str) and isinstance(value, str), 'Environment entries must contain strings')
+        require(not (SECRET_ENV.search(name) and value) or public_token_setting(name, value),
+                'Plaintext secret-like environment values are forbidden')
         require(name != 'RESET_DB' or value == 'false', 'Database reset must be explicitly false')
 
 
@@ -262,7 +282,24 @@ def non_root(user):
     return bool(name) and name != 'root' and not (name.isdecimal() and int(name) == 0)
 
 
-def task_request(m, task, tags, images):
+def validate_health_checks(m, checks):
+    require(isinstance(checks, dict) and checks and set(checks) <= set(m['images']),
+            'Bootstrap health checks must name configured image containers only')
+    bounds = {'interval': (5, 300), 'timeout': (2, 60), 'retries': (1, 10), 'startPeriod': (0, 300)}
+    for check in checks.values():
+        require(isinstance(check, dict) and 'command' in check and set(check) <= {'command', *bounds},
+                'Unexpected bootstrap health-check fields')
+        command = check['command']
+        require(isinstance(command, list) and 2 <= len(command) <= 50 and command[0] == 'CMD'
+                and all(isinstance(arg, str) and arg and '\x00' not in arg for arg in command),
+                'Bootstrap health checks require an explicit CMD argument list')
+        for key, (low, high) in bounds.items():
+            require(key not in check or type(check[key]) is int and low <= check[key] <= high,
+                    'Bootstrap health-check timing is outside ECS bounds')
+    return checks
+
+
+def task_request(m, task, tags, images, health_checks=None):
     require(set(task) <= TASK_FIELDS | TASK_METADATA, 'Unrecognized task fields; update the deployer before changing this definition')
     require(task.get('family') == m['taskFamily'] and task.get('status') == 'ACTIVE', 'Unexpected/inactive task family')
     require(task.get('taskRoleArn') == m['taskRoleArn'] and task.get('executionRoleArn') == m['executionRoleArn'], 'Task/execution role differs from reviewed manifest')
@@ -270,6 +307,8 @@ def task_request(m, task, tags, images):
     platform = task.get('runtimePlatform', {})
     require(platform.get('cpuArchitecture', 'X86_64') == 'X86_64' and platform.get('operatingSystemFamily', 'LINUX') == 'LINUX', 'This release supports Linux/amd64 tasks only')
     require(set(images) == set(m['images']), 'Supply exactly the manifest image set')
+    if health_checks is not None:
+        validate_health_checks(m, health_checks)
     result = {k: deepcopy(v) for k, v in task.items() if k in TASK_FIELDS}
     require(isinstance(tags, list), 'Task tags must be a list')
     # ECS rejects an explicitly empty tag list on registration. Omission keeps
@@ -284,11 +323,16 @@ def task_request(m, task, tags, images):
             require(not container.get('privileged') and ('user' not in container or non_root(container['user'])), 'Application task must not override the image to root/privileged')
             counts[container['name']] += 1
             require(DIGEST.fullmatch(images[container['name']].rsplit('@', 1)[-1]), 'Deploy only image digests')
+            if health_checks is not None and container['name'] in health_checks:
+                proposed = health_checks[container['name']]
+                require(not container.get('healthCheck') or container['healthCheck'] == proposed,
+                        'Bootstrap cannot replace an existing task health check')
+                container['healthCheck'] = deepcopy(proposed)
             require(container.get('healthCheck'), 'Updated containers require a task health check')
             container['image'] = images[container['name']]
     require(all(n == 1 for n in counts.values()), 'Each configured container must exist exactly once')
-    # All roles, secret references, sidecars, health checks, resources and volumes
-    # are preserved. Parameter values never enter this process.
+    # Existing configuration is preserved. Explicitly reviewed checks may be
+    # added where absent, with the new image, never by restarting the old image.
     return result
 
 
@@ -447,7 +491,7 @@ class Publisher:
         raise DeployError('Image scan timed out; service was not updated')
 
 
-def deploy(aws, m, locals_by_name, release, publisher):
+def deploy(aws, m, locals_by_name, release, publisher, health_checks=None):
     require(set(locals_by_name) == set(m['images']), 'Supply exactly one prebuilt image per configured container')
     require(re.fullmatch(r'[a-f0-9]{40}-[0-9]{1,12}', release), 'Release must be CIRCLE_SHA1-CIRCLE_BUILD_NUM')
     previous = read_service(aws, m)
@@ -457,14 +501,14 @@ def deploy(aws, m, locals_by_name, release, publisher):
     task, tags = response['taskDefinition'], response.get('tags', [])
     # Validate configuration before publishing anything. Placeholder digests are
     # only used for validation and never sent to AWS.
-    task_request(m, task, tags, {name: 'preflight@sha256:' + '0' * 64 for name in m['images']})
+    task_request(m, task, tags, {name: 'preflight@sha256:' + '0' * 64 for name in m['images']}, health_checks)
     images = {}
     scan_deadline = time.monotonic() + 900
     for name, local in locals_by_name.items():
         images[name] = publisher.publish(name, local, release, scan_deadline)
     current = read_service(aws, m)
     require(stable(current, definition), 'Service changed during image publication; retry after inspection')
-    request = task_request(m, task, tags, images)
+    request = task_request(m, task, tags, images, health_checks)
     registered = aws.call('ecs', 'register-task-definition', **request)['taskDefinition']
     target = registered['taskDefinitionArn']
     require(re.fullmatch(re.escape(arn(m, 'ecs', 'task-definition/' + m['taskFamily'])) + r':[0-9]+', target), 'Unexpected registered task ARN')
@@ -499,8 +543,13 @@ def main(argv=None):
         p.add_argument('--manifest', required=True)
         if name == 'deploy':
             p.add_argument('--image', action='append', required=True, metavar='CONTAINER=LOCAL_IMAGE')
+            p.add_argument('--bootstrap-health-checks', metavar='REVIEWED_JSON')
     args = parser.parse_args(argv)
     m = read_manifest(args.manifest)
+    health_checks = None
+    if args.command == 'deploy' and args.bootstrap_health_checks:
+        health_checks = validate_health_checks(m, json.loads(
+            Path(args.bootstrap_health_checks).read_text(), object_pairs_hook=unique_object))
     if args.command == 'policies':
         print(json.dumps({'trust': trust_policy(m), 'permissions': role_policy(m)}, indent=2))
         return
@@ -518,7 +567,7 @@ def main(argv=None):
         images[name] = image
     release = os.environ.get('CIRCLE_SHA1', '') + '-' + os.environ.get('CIRCLE_BUILD_NUM', '')
     with tempfile.TemporaryDirectory(prefix='tc-deploy-docker-') as directory:
-        result = deploy(aws, m, images, release, Publisher(aws, m, directory))
+        result = deploy(aws, m, images, release, Publisher(aws, m, directory), health_checks)
     print(json.dumps(result, indent=2))  # Only non-secret rollout evidence.
 
 

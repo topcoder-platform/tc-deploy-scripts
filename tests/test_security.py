@@ -372,8 +372,8 @@ class DeploymentTests(unittest.TestCase):
         self.aws = FakeAWS(self.m)
         self.publisher = FakePublisher(self.m)
 
-    def deploy(self):
-        return d.deploy(self.aws, self.m, {'example-v6': 'example:build'}, RELEASE, self.publisher)
+    def deploy(self, checks=None):
+        return d.deploy(self.aws, self.m, {'example-v6': 'example:build'}, RELEASE, self.publisher, checks)
 
     def test_full_release_never_calls_ssm_and_preserves_roles_secrets(self):
         original = deepcopy(self.aws.task)
@@ -451,6 +451,113 @@ class DeploymentTests(unittest.TestCase):
         self.aws.task['containerDefinitions'][0]['environment'].append({'name': 'DATABASE_URL', 'value': 'secret'})
         with self.assertRaises(d.DeployError):
             self.deploy()
+
+    def test_public_token_metadata_is_preserved(self):
+        entries = [{'name': name, 'value': 'https://issuer.example.test/audience/'}
+                   for name in d.PUBLIC_TOKEN_URLS]
+        entries.append({'name': 'TOKEN_CACHE_TIME', 'value': '86400'})
+        self.aws.task['containerDefinitions'][0]['environment'] += entries
+        self.deploy()
+        self.assertEqual(self.aws.registered['containerDefinitions'][0]['environment'][-4:], entries)
+
+    def test_public_metadata_does_not_allow_credentials(self):
+        values = ['opaque-token', 'http://issuer.test', 'https://user:pass@issuer.test',
+                  'https://@issuer.test', 'https://issuer.test/?token=secret',
+                  'https://issuer.test/#secret', 'https://issuer.test:bad',
+                  'https://issuer.test:0', 'https://issuer.test/ white', 'https://']
+        entries = [(name, value) for name in d.PUBLIC_TOKEN_URLS for value in values]
+        entries += [('TOKEN_CACHE_TIME', value) for value in ['secret', '-1', '1.2', '2147483648']]
+        entries += [(name, 'https://issuer.test') for name in
+                    ['AUTH0_CLIENT_SECRET', 'DB_PASSWORD', 'ACCESS_TOKEN', 'OTHER_TOKEN_ISSUER']]
+        for name, value in entries:
+            with self.subTest(name=name, value=value):
+                self.aws.task = task(self.m)
+                self.aws.task['containerDefinitions'][0]['environment'].append({'name': name, 'value': value})
+                with self.assertRaises(d.DeployError): self.deploy()
+                self.assertEqual(self.publisher.calls, [])
+
+    def test_missing_health_requires_explicit_bootstrap(self):
+        del self.aws.task['containerDefinitions'][0]['healthCheck']
+        with self.assertRaises(d.DeployError): self.deploy()
+        self.assertEqual(self.publisher.calls, [])
+        self.assertIsNone(self.aws.registered)
+
+    def test_bootstrap_adds_health_atomically_and_preserves_configuration(self):
+        del self.aws.task['containerDefinitions'][0]['healthCheck']
+        self.aws.task['containerDefinitions'].append({'name': 'metrics', 'image': 'trusted@' + DIGEST, 'essential': False})
+        original = deepcopy(self.aws.task)
+        checks = {'example-v6': {'command': ['CMD', 'node', 'health.js'], 'interval': 30, 'timeout': 5, 'retries': 3, 'startPeriod': 120}}
+        self.deploy(checks)
+        self.assertEqual(self.aws.task, original)
+        request = next(p for _, op, p in self.aws.calls if op == 'register-task-definition')
+        expected = {k: deepcopy(v) for k, v in original.items() if k in d.TASK_FIELDS}
+        expected['tags'] = self.aws.tags
+        expected['containerDefinitions'][0]['image'] = self.publisher.publish('example-v6', '', '', 0)
+        expected['containerDefinitions'][0]['healthCheck'] = checks['example-v6']
+        self.assertEqual(request, expected)
+        operations = [op for _, op, _ in self.aws.calls]
+        self.assertEqual(operations.count('update-service'), 1)
+        self.assertLess(operations.index('register-task-definition'), operations.index('update-service'))
+
+    def test_bootstrap_never_replaces_existing_health(self):
+        checks = {'example-v6': {'command': ['CMD', 'false']}}
+        with self.assertRaises(d.DeployError): self.deploy(checks)
+        self.assertEqual(self.publisher.calls, [])
+        checks['example-v6'] = deepcopy(self.aws.task['containerDefinitions'][0]['healthCheck'])
+        self.deploy(checks)
+
+    def test_invalid_bootstrap_stops_before_publication(self):
+        invalid = [{}, [], {'sidecar': {'command': ['CMD', 'true']}},
+                   {'example-v6': {'command': ['CMD-SHELL', 'true']}},
+                   {'example-v6': {'command': ['CMD']}},
+                   {'example-v6': {'command': ['CMD', 'true'], 'unknown': 1}}]
+        for key, values in {'interval': [4, 301, True], 'timeout': [1, 61],
+                            'retries': [0, 11], 'startPeriod': [-1, 301]}.items():
+            invalid += [{'example-v6': {'command': ['CMD', 'true'], key: value}} for value in values]
+        for checks in invalid:
+            with self.subTest(checks=checks):
+                with self.assertRaises(d.DeployError): self.deploy(checks)
+                self.assertEqual(self.publisher.calls, [])
+                self.assertIsNone(self.aws.registered)
+
+    def test_bootstrap_scan_failure_leaves_old_revision_untouched(self):
+        del self.aws.task['containerDefinitions'][0]['healthCheck']
+        original = deepcopy(self.aws.task)
+        with patch.object(self.publisher, 'publish', side_effect=d.DeployError('Scan failed')):
+            with self.assertRaises(d.DeployError):
+                self.deploy({'example-v6': {'command': ['CMD', 'true']}})
+        self.assertEqual(self.aws.task, original)
+        self.assertIsNone(self.aws.registered)
+        self.assertNotIn('update-service', [op for _, op, _ in self.aws.calls])
+
+    def test_bootstrap_readback_tampering_stops_update(self):
+        del self.aws.task['containerDefinitions'][0]['healthCheck']
+        def tamper(api, operation, params):
+            if operation == 'describe-task-definition' and self.aws.registered:
+                self.aws.registered['containerDefinitions'][0]['healthCheck'] = {'command': ['CMD', 'false']}
+        self.aws.before = tamper
+        with self.assertRaises(d.DeployError):
+            self.deploy({'example-v6': {'command': ['CMD', 'true']}})
+        self.assertNotIn('update-service', [op for _, op, _ in self.aws.calls])
+
+    def test_bootstrap_native_rollback_remains_failed(self):
+        del self.aws.task['containerDefinitions'][0]['healthCheck']
+        def rollback(api, operation, params):
+            if operation == 'describe-services' and any(op == 'update-service' for _, op, _ in self.aws.calls):
+                self.aws.service = service(self.m)
+        self.aws.before = rollback
+        with self.assertRaises(d.DeployError):
+            self.deploy({'example-v6': {'command': ['CMD', 'true']}})
+
+    def test_duplicate_bootstrap_fields_fail_before_authentication(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p = Path(temp) / 'health.json'
+            p.write_text('{"example-v6":{"command":["CMD","true"],"command":["CMD","false"]}}')
+            with patch.object(d, 'authenticate') as authenticate:
+                with self.assertRaises(d.DeployError):
+                    d.main(['deploy', '--manifest', str(ROOT / 'examples/deploy.dev.json'),
+                            '--image', 'example-v6=example:build', '--bootstrap-health-checks', str(p)])
+                authenticate.assert_not_called()
 
     def test_task_unknown_fields_fail_closed(self):
         self.aws.task['newUnsupportedField'] = True

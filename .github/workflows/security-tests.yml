@@ -13,6 +13,12 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -v
+      - name: Test with the pinned CircleCI AWS CLI executor
+        run: |
+          docker run --rm --network none --entrypoint python3 \
+            -v "$PWD:/suite:ro" -w /suite \
+            cimg/aws@sha256:4cf3768db00ddf9bc439b8c84e8a60c11a14edf81c8baf76f74132144f8340d5 \
+            -m unittest discover -s tests -v
       - name: Check shell syntax
         run: |
           python3 - <<'PY'

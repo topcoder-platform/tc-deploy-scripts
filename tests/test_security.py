@@ -5,7 +5,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -270,6 +272,48 @@ class CredentialTests(unittest.TestCase):
             d.AWS('us-east-1').call('sts', 'assume-role-with-web-identity', WebIdentityToken='secret-token')
         self.assertNotIn('secret-token', str(execute.call_args.args[0]))
         self.assertIn('secret-token', execute.call_args.args[2])
+
+    def test_subprocess_can_reopen_json_stdin(self):
+        # Exercise real file descriptors: a subprocess PIPE fails on the second
+        # open, just like AWS CLI's repeated loading of file:///dev/stdin.
+        script = '''
+import json, pathlib
+first = json.loads(pathlib.Path('/dev/stdin').read_text())
+second = json.loads(pathlib.Path('/dev/stdin').read_text())
+assert first == second and first['WebIdentityToken'] == 'dummy-secret'
+print('ok')
+'''
+        result = d.execute([sys.executable, '-c', script], d.clean_environment('us-east-1'),
+                           json.dumps({'WebIdentityToken': 'dummy-secret'}))
+        self.assertEqual(result.strip(), 'ok')
+
+    @unittest.skipUnless(shutil.which('aws'), 'AWS CLI integration runs in the pinned executor')
+    def test_aws_cli_parses_stdin_offline(self):
+        command = ['aws', 'ecr', 'describe-images', '--region', 'us-east-1',
+                   '--cli-input-json', 'file:///dev/stdin', '--generate-cli-skeleton', 'output']
+        result = d.execute(command, d.clean_environment('us-east-1'),
+                           json.dumps({'repositoryName': 'example', 'imageIds': [{'imageTag': 'test'}]}))
+        self.assertIsInstance(json.loads(result)['imageDetails'], list)
+
+    def test_input_descriptor_closed_after_success_and_failure(self):
+        for fails in (False, True):
+            descriptors = []
+            def run(command, **kwargs):
+                stream = kwargs['stdin']
+                descriptors.append(stream)
+                self.assertNotIn('dummy-secret', str(command))
+                self.assertIn('/memfd:', os.readlink('/proc/self/fd/' + str(stream.fileno())))
+                self.assertEqual(stream.read(), 'dummy-secret')
+                if fails:
+                    raise subprocess.TimeoutExpired(command, 1)
+                return subprocess.CompletedProcess(command, 0, '', '')
+            with patch.object(d.subprocess, 'run', side_effect=run):
+                if fails:
+                    with self.assertRaises(d.DeployError):
+                        d.execute(['aws'], {}, 'dummy-secret')
+                else:
+                    d.execute(['aws'], {}, 'dummy-secret')
+            self.assertTrue(descriptors[0].closed)
 
     def test_no_secret_api_even_on_explicit_call(self):
         with patch.object(d, 'execute') as execute:

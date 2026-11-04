@@ -6,6 +6,7 @@ ambient AWS identity, parameter discovery, infrastructure creation or build.
 """
 import argparse
 import base64
+from contextlib import ExitStack
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
@@ -161,8 +162,20 @@ def clean_environment(region):
 
 def execute(command, env, input_text=None, timeout=120):
     try:
-        result = subprocess.run(command, env=env, input=input_text, text=True,
-                                capture_output=True, timeout=timeout, check=False)
+        with ExitStack() as stack:
+            stdin = None
+            if input_text is not None:
+                # AWS CLI can open file:///dev/stdin more than once. A pipe is
+                # exhausted after the first read; an anonymous Linux memory file
+                # is independently reopenable without putting secrets in argv or
+                # a named filesystem file. Close it on success and every failure.
+                stdin = stack.enter_context(os.fdopen(
+                    os.memfd_create('tcdeploy-input', os.MFD_CLOEXEC), 'w+', encoding='utf-8'))
+                stdin.write(input_text)
+                stdin.flush()
+                stdin.seek(0)
+            result = subprocess.run(command, env=env, stdin=stdin, text=True,
+                                    capture_output=True, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired):
         raise DeployError('External command failed or timed out; no credentials were printed') from None
     # Never echo stdout/stderr or full argv on failures: AWS responses and Docker

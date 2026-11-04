@@ -284,7 +284,11 @@ def read_service(aws, m):
     service = response['services'][0]
     require(service.get('status') == 'ACTIVE' and service.get('desiredCount', 0) > 0, 'Service must be active with positive desired capacity; bootstrap separately')
     require(service.get('deploymentController', {}).get('type', 'ECS') == 'ECS', 'Only ECS rolling deployments are supported')
-    require(service.get('deploymentConfiguration', {}).get('deploymentCircuitBreaker') == {'enable': True, 'rollback': True}, 'Enable ECS deployment circuit breaker with rollback before migration')
+    breaker = service.get('deploymentConfiguration', {}).get('deploymentCircuitBreaker')
+    # ECS also returns optional reset/threshold settings. Require the two safety
+    # flags without rejecting or changing those service-owned settings.
+    require(isinstance(breaker, dict) and breaker.get('enable') is True and breaker.get('rollback') is True,
+            'Enable ECS deployment circuit breaker with rollback before migration')
     require(service.get('serviceArn') == arn(m, 'ecs', f"service/{m['cluster']}/{m['service']}"), 'Service ARN differs from manifest')
     return service
 

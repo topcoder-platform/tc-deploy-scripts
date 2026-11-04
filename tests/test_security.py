@@ -391,6 +391,40 @@ class DeploymentTests(unittest.TestCase):
         with self.assertRaises(d.DeployError):
             self.deploy()
 
+    def test_circuit_breaker_accepts_optional_ecs_settings(self):
+        breaker = self.aws.service['deploymentConfiguration']['deploymentCircuitBreaker']
+        breaker.update(resetOnHealthyTask=True,
+                       thresholdConfiguration={'type': 'BOUNDED_PERCENT', 'value': 50})
+        original = deepcopy(breaker)
+        checked = d.read_service(self.aws, self.m)
+        self.assertEqual(checked['deploymentConfiguration']['deploymentCircuitBreaker'], original)
+        self.deploy()
+        updates = [params for _, op, params in self.aws.calls if op == 'update-service']
+        self.assertEqual(len(updates), 1)
+        self.assertNotIn('deploymentConfiguration', updates[0])
+
+    def test_circuit_breaker_requires_literal_true_flags(self):
+        for flag in ('enable', 'rollback'):
+            for value in (False, None, 0, 1, 'true'):
+                with self.subTest(flag=flag, value=value):
+                    breaker = {'enable': True, 'rollback': True, 'resetOnHealthyTask': True,
+                               'thresholdConfiguration': {'type': 'BOUNDED_PERCENT', 'value': 50}}
+                    breaker[flag] = value
+                    self.aws.service['deploymentConfiguration']['deploymentCircuitBreaker'] = breaker
+                    with self.assertRaises(d.DeployError):
+                        self.deploy()
+                    self.assertEqual(self.publisher.calls, [])
+                    self.assertIsNone(self.aws.registered)
+
+    def test_circuit_breaker_rejects_missing_flags_and_malformed_objects(self):
+        for breaker in (None, [], 'enabled', {}, {'enable': True}, {'rollback': True}):
+            with self.subTest(breaker=breaker):
+                self.aws.service['deploymentConfiguration']['deploymentCircuitBreaker'] = breaker
+                with self.assertRaises(d.DeployError):
+                    self.deploy()
+                self.assertEqual(self.publisher.calls, [])
+                self.assertIsNone(self.aws.registered)
+
     def test_ssm_failure_cannot_be_silently_ignored_because_no_read_exists(self):
         def fail_secret_calls(api, operation, params):
             self.assertNotIn(api, ('ssm', 'secretsmanager', 'kms'))

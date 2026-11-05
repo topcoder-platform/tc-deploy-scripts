@@ -15,13 +15,11 @@ Read [the migration guide](docs/MIGRATION.md), [the Auth0/AWS explanation](docs/
 
 ## Usage
 
-Copy `examples/deploy.dev.json` / `examples/deploy.prod.json` into the service repository and replace the example identifiers with administrator-verified values. These are placeholders, not guessed Topcoder targets. Generate IAM documents offline:
+Copy `examples/deploy.dev.json` / `examples/deploy.prod.json` into the service repository and replace the example identifiers with administrator-verified values. These are placeholders, not guessed Topcoder targets.
 
-```sh
-python3 -I tcdeploy.py policies --manifest deploy/dev.json > policies.json
-```
+The OIDC provider, deployment roles, trust policies, permissions and boundaries must already be installed through a separately reviewed administrator/IaC workflow. Their service-specific definitions live in the private [v6-services-iac repository](https://github.com/topcoder-platform/v6-services-iac/tree/main/services), under `services/<repository>/deploy/iam/`. Application CI must not fetch that repository or provision IAM. Secret/KMS read permissions belong on the narrowly scoped execution role, never the deployment role.
 
-An administrator installs the generated `trust` and `permissions` documents through reviewed infrastructure changes. Secret/KMS read permissions belong on the narrowly scoped execution role, never the deployment role.
+`tcdeploy.py` exposes only `deploy` and `check-auth`; it does not generate or install IAM policies. Its STS session policy only restricts the temporary session within the existing role's permissions and boundary. It cannot grant new role permissions or change trust.
 
 From the service checkout, in a build job without deployment context:
 
@@ -52,7 +50,7 @@ Plaintext runtime credentials remain forbidden. The specific public settings `M2
 
 ECR may omit its optional severity-count map for a clean image. That response is accepted only after the same completion/freshness checks, with an exact registry/repository/digest match, explicitly empty findings lists, and no remaining page. An absent summary without that evidence, nonempty findings without a summary, or malformed counts fails closed. This requires no additional IAM permissions or changes to registry scanning. See the [ECR response schema](https://docs.aws.amazon.com/AmazonECR/latest/APIReference/API_ImageScanFindings.html).
 
-Enhanced scanning also requires `inspector2:ListFindings` and `inspector2:ListCoverage` in the deployment role, its permissions boundary, and the STS session policy. The generated role policy limits these read-only actions to the deployment region. AWS does not support repository-level resource restrictions for these Inspector list actions, so they can read account-wide scan metadata in that region. No Inspector configuration/write actions or parameter/secret access are granted. Existing roles and boundaries must be updated through the private infrastructure repository before adopting this change. See [AWS enhanced-scanning permissions](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-enhanced-iam.html).
+Enhanced scanning also requires `inspector2:ListFindings` and `inspector2:ListCoverage` in the deployment role, its permissions boundary, and the STS session policy. The administrator-installed role policy and boundary must limit these read-only actions to the deployment region. AWS does not support repository-level resource restrictions for these Inspector list actions, so they can read account-wide scan metadata in that region. No Inspector configuration/write actions or parameter/secret access are granted. Existing roles and boundaries must be updated through the private infrastructure repository before adopting this change. See [AWS enhanced-scanning permissions](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-enhanced-iam.html).
 
 Use a unique CircleCI build number when retrying publication to immutable tags. ECR can return multiple image records when several tags share one digest; publication verification resolves the exact immutable release tag and checks its returned tag, image digest and configuration digest before scanning. A failed rollout remains a failure even if ECS rolls back. The script never blindly reverts over another deployment.
 

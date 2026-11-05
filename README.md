@@ -22,7 +22,7 @@ sequenceDiagram
     CI->>Broker: Client ID + secret, audience, caller-supplied build metadata
     Note over Broker: Server-side credential issuance and authorization implementation not inspected
     Broker-->>CI: access_token JWT containing AWS credential claims
-    CI->>CI: Decode JWT payload; extract AWS key, secret and session token
+    CI->>CI: Decode JWT payload and extract AWS key, secret and session token
     CI->>CI: Write AWS CLI configuration and awsenvconf exports
     CI->>SSM: Request configuration with decryption using AWS credentials
     SSM-->>CI: Parameter values written to generated configuration files

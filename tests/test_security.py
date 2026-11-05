@@ -2,6 +2,7 @@ import base64
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -120,14 +121,13 @@ class ManifestTests(unittest.TestCase):
     def test_wrong_account_role(self):
         self.check_invalid('executionRoleArn', 'arn:aws:iam::222222222222:role/other')
 
-    def test_absent_task_role_does_not_grant_runtime_permissions(self):
+    def test_absent_task_role_is_accepted(self):
         m = manifest()
         m['taskRoleArn'] = None
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp) / 'manifest.json'
             p.write_text(json.dumps(m))
             self.assertIsNone(d.read_manifest(p)['taskRoleArn'])
-        self.assertEqual(d.role_policy(m)['Statement'][-1]['Resource'], [m['executionRoleArn']])
         self.check_invalid('taskRoleArn', '')
 
     def test_shell_injection_is_invalid_data(self):
@@ -139,29 +139,23 @@ class ManifestTests(unittest.TestCase):
     def test_production_branch_guard(self):
         self.check_invalid('environment', 'prod')
 
-    def test_legacy_dev_branch_has_exact_trust(self):
+    def test_legacy_dev_branch_is_accepted(self):
         m = manifest()
         m['branch'] = 'dev'
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp) / 'manifest.json'
             p.write_text(json.dumps(m))
             self.assertEqual(d.read_manifest(p)['branch'], 'dev')
-        subject = next(iter(d.trust_policy(m)['Statement'][0]['Condition']['StringLike'].values()))
-        self.assertIn(':checkout-ref:refs/heads/dev:', subject)
-        self.assertTrue(subject.endswith(':config-ref:refs/heads/dev'))
         self.check_invalid('branch', 'feature/deploy')
         self.check_invalid('branch', 'master')
 
-    def test_legacy_prod_branch_has_exact_trust(self):
+    def test_legacy_prod_branch_is_accepted(self):
         m = manifest()
         m.update(environment='prod', branch='prod')
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp) / 'manifest.json'
             p.write_text(json.dumps(m))
             self.assertEqual(d.read_manifest(p)['branch'], 'prod')
-        subject = next(iter(d.trust_policy(m)['Statement'][0]['Condition']['StringLike'].values()))
-        self.assertIn(':checkout-ref:refs/heads/prod:', subject)
-        self.assertTrue(subject.endswith(':config-ref:refs/heads/prod'))
         m['branch'] = 'develop'
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp) / 'manifest.json'
@@ -175,28 +169,13 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaises(d.DeployError):
             json.loads('{"a":1,"a":2}', object_pairs_hook=d.unique_object)
 
-    def test_policies_bind_identity_and_forbid_parameters(self):
-        m = manifest()
-        trust = d.trust_policy(m)
-        text = json.dumps(trust)
-        self.assertIn(':config-ref:refs/heads/develop', text)
-        self.assertIn(':checkout-source:github.com/example/example-v6:', text)
-        self.assertIn('project:' + m['circleciProjectId'], text)
-        for policy in (d.role_policy(m), d.SESSION_POLICY):
-            deny = policy['Statement'][0]
-            self.assertEqual(deny['Effect'], 'Deny')
-            self.assertTrue({'ssm:*', 'secretsmanager:*', 'kms:Decrypt', 'sts:AssumeRole*'} <= set(deny['Action']))
+    def test_session_forbids_secret_access_and_role_chaining(self):
+        deny = d.SESSION_POLICY['Statement'][0]
+        self.assertEqual(deny['Effect'], 'Deny')
+        self.assertTrue({'ssm:*', 'secretsmanager:*', 'kms:Decrypt', 'sts:AssumeRole*'} <= set(deny['Action']))
         self.assertLess(len(d.compact(d.SESSION_POLICY)), 2048)
-        passrole = d.role_policy(m)['Statement'][-1]
-        self.assertEqual(passrole['Resource'], [m['taskRoleArn'], m['executionRoleArn']])
 
-    def test_enhanced_scan_permissions_are_read_only_and_region_limited(self):
-        m = manifest()
-        inspector = [s for s in d.role_policy(m)['Statement']
-                     if any(a.startswith('inspector2:') for a in s['Action'])]
-        self.assertEqual(inspector, [{'Effect': 'Allow',
-            'Action': ['inspector2:ListFindings', 'inspector2:ListCoverage'], 'Resource': '*',
-            'Condition': {'StringEquals': {'aws:RequestedRegion': m['region']}}}])
+    def test_enhanced_scan_session_permissions_are_read_only(self):
         for policy in (d.session_policy(), d.session_policy(d.ADAPTER_ACTIONS)):
             actions = policy['Statement'][1]['Action']
             self.assertEqual({a for a in actions if a.startswith('inspector2:')},
@@ -942,6 +921,26 @@ class PublisherTests(unittest.TestCase):
 
 
 class EntrypointTests(unittest.TestCase):
+    def test_removed_policies_command_fails_before_manifest_or_aws_access(self):
+        with patch.object(d, 'read_manifest') as read_manifest, patch.object(d.AWS, 'call') as call, \
+                patch('sys.stderr', new_callable=io.StringIO) as stderr, \
+                patch('sys.stdout', new_callable=io.StringIO) as stdout:
+            with self.assertRaises(SystemExit) as raised:
+                d.main(['policies', '--manifest', str(ROOT / 'examples/deploy.dev.json')])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("invalid choice: 'policies'", stderr.getvalue())
+        self.assertEqual(stdout.getvalue(), '')
+        read_manifest.assert_not_called()
+        call.assert_not_called()
+
+    def test_cli_help_lists_only_runtime_commands(self):
+        with patch('sys.stdout', new_callable=io.StringIO) as stdout:
+            with self.assertRaises(SystemExit) as raised:
+                d.main(['--help'])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn('{deploy,check-auth}', stdout.getvalue())
+        self.assertNotIn('policies', stdout.getvalue())
+
     def test_old_helpers_fail_before_any_network_or_credential_file(self):
         for name in ('master_deploy.sh', 'awsconfiguration.sh', 'psvar-processor.sh', 'buildenv.sh', 'buildproperties.sh', 'utilities/tooltoencdec.sh', 'uploadjson-ps.sh', 'uploadjsonso-ps.sh', 'setup_ms/template/setupscr_v7.3.sh'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:

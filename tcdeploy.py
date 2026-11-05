@@ -77,48 +77,8 @@ def arn(m, service, resource):
     return f"arn:aws:{service}:{m['region']}:{m['accountId']}:{resource}"
 
 
-def role_policy(m):
-    """Administrator-installed policy, also used as the deploy role boundary."""
-    return {'Version': '2012-10-17', 'Statement': [
-        {'Effect': 'Deny', 'Action': ['ssm:*', 'secretsmanager:*', 'kms:Decrypt', 'sts:AssumeRole*'], 'Resource': '*'},
-        # DescribeTaskDefinition does not support resource-level authorization.
-        {'Effect': 'Allow', 'Action': ['sts:GetCallerIdentity', 'ecr:GetAuthorizationToken',
-             'ecs:DescribeTaskDefinition'], 'Resource': '*'},
-        {'Effect': 'Allow', 'Action': ['ecr:DescribeRepositories', 'ecr:DescribeImages',
-             'ecr:BatchGetImage', 'ecr:BatchCheckLayerAvailability', 'ecr:InitiateLayerUpload',
-             'ecr:UploadLayerPart', 'ecr:CompleteLayerUpload', 'ecr:PutImage',
-             'ecr:DescribeImageScanFindings'],
-         'Resource': [arn(m, 'ecr', 'repository/' + r) for r in m['images'].values()]},
-        {'Effect': 'Allow', 'Action': ['ecs:DescribeServices'], 'Resource': arn(m, 'ecs', f"service/{m['cluster']}/{m['service']}")},
-        {'Effect': 'Allow', 'Action': 'ecs:UpdateService', 'Resource': arn(m, 'ecs', f"service/{m['cluster']}/{m['service']}"),
-         'Condition': {'ArnLike': {'ecs:task-definition': arn(m, 'ecs', 'task-definition/' + m['taskFamily'] + ':*')}}},
-        {'Effect': 'Allow', 'Action': ['ecs:RegisterTaskDefinition', 'ecs:TagResource', 'ecs:ListTagsForResource'],
-         'Resource': arn(m, 'ecs', 'task-definition/' + m['taskFamily'] + ':*')},
-        {'Effect': 'Allow', 'Action': ['ecs:ListTasks', 'ecs:DescribeTasks'], 'Resource': '*',
-         'Condition': {'ArnEquals': {'ecs:cluster': arn(m, 'ecs', 'cluster/' + m['cluster'])}}},
-        # ECR enhanced scan reads depend on these Inspector APIs. They do not
-        # support resource-level permissions; limit them to the deployment region.
-        {'Effect': 'Allow', 'Action': ['inspector2:ListFindings', 'inspector2:ListCoverage'], 'Resource': '*',
-         'Condition': {'StringEquals': {'aws:RequestedRegion': m['region']}}},
-        {'Effect': 'Allow', 'Action': 'iam:PassRole', 'Resource': [r for r in (m['taskRoleArn'], m['executionRoleArn']) if r],
-         'Condition': {'StringEquals': {'iam:PassedToService': 'ecs-tasks.amazonaws.com'}}}
-    ]}
-
-
-def trust_policy(m):
-    issuer = 'oidc.circleci.com/org/' + m['circleciOrgId']
-    subject = (f"org:{m['circleciOrgId']}:project:{m['circleciProjectId']}:user:*:"
-               f"checkout-source:{m['repository']}:checkout-ref:refs/heads/{m['branch']}:"
-               f"config-source:{m['repository']}:config-ref:refs/heads/{m['branch']}")
-    return {'Version': '2012-10-17', 'Statement': [{
-        'Effect': 'Allow', 'Principal': {'Federated': f"arn:aws:iam::{m['accountId']}:oidc-provider/{issuer}"},
-        'Action': 'sts:AssumeRoleWithWebIdentity', 'Condition': {
-            'StringEquals': {issuer + ':aud': m['circleciOrgId']},
-            'StringLike': {issuer + ':sub': subject}}
-    }]}
-
-
-# Compact STS policy (<2048 bytes). IAM role policy above restricts resources.
+# Restrict the temporary STS session; this does not create or modify IAM policies.
+# Pre-provisioned IAM roles and boundaries in v6-services-iac scope resources.
 # Explicit deny also protects against resource policies and prevents role chaining.
 SESSION_POLICY = {'Version': '2012-10-17', 'Statement': [
     {'Effect': 'Deny', 'Action': ['ssm:*', 'secretsmanager:*', 'kms:Decrypt', 'sts:AssumeRole*'], 'Resource': '*'},
@@ -556,7 +516,7 @@ def deploy(aws, m, locals_by_name, release, publisher, health_checks=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    for name in ('deploy', 'policies', 'check-auth'):
+    for name in ('deploy', 'check-auth'):
         p = sub.add_parser(name)
         p.add_argument('--manifest', required=True)
         if name == 'deploy':
@@ -568,9 +528,6 @@ def main(argv=None):
     if args.command == 'deploy' and args.bootstrap_health_checks:
         health_checks = validate_health_checks(m, json.loads(
             Path(args.bootstrap_health_checks).read_text(), object_pairs_hook=unique_object))
-    if args.command == 'policies':
-        print(json.dumps({'trust': trust_policy(m), 'permissions': role_policy(m)}, indent=2))
-        return
     require(os.environ.get('CIRCLE_BRANCH') == m['branch'] and not os.environ.get('CIRCLE_TAG'), 'Only the configured branch may deploy (tag pipelines are forbidden)')
     require(os.environ.get('CIRCLE_PROJECT_USERNAME', '') + '/' + os.environ.get('CIRCLE_PROJECT_REPONAME', '') == m['repository'].removeprefix('github.com/'), 'CircleCI repository differs from manifest')
     token = os.environ.get('CIRCLE_OIDC_TOKEN_V3')

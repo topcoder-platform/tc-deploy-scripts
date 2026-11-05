@@ -21,9 +21,13 @@ The incident owner must locate the configured endpoint and associated Auth0 appl
 
 ## v2: CircleCI to STS directly
 
-CircleCI issues an OIDC v3 token. AWS STS verifies it against the OIDC provider and role trust policy. The generated trust binds organization, project, checkout repository/ref **and configuration repository/ref**. Dev/prod use distinct roles/accounts/manifests. There is no Auth0 broker exchange, custom JWT credential envelope, or static AWS fallback.
+CircleCI issues an OIDC v3 token. AWS STS verifies it against the OIDC provider and role trust policy. The pre-provisioned trust policy binds organization, project, checkout repository/ref **and configuration repository/ref**. Dev/prod use distinct roles/accounts/manifests. There is no Auth0 broker exchange, custom JWT credential envelope, or static AWS fallback.
 
-The deployer requests a one-hour session, attaches a restrictive session policy, and verifies the returned account/assumed-role identity. Both the generated IAM role policy and session policy explicitly deny `ssm:*`, `secretsmanager:*`, `kms:Decrypt` and role chaining. Other permissions cover only required ECS/ECR operations and passing the two exact runtime roles. **The deny must be installed in IAM**: a hostile client could omit an optional session policy. Local code is not the durable authorization boundary.
+The OIDC provider, roles, trust policies, permissions and boundaries are installed in advance with a separate administrator/IaC identity. Their definitions live in the private [v6-services-iac repository](https://github.com/topcoder-platform/v6-services-iac/tree/main/services), under `services/<repository>/deploy/iam/`. `tcdeploy.py` has no IAM policy-generation or installation command. Application CI does not fetch the IaC repository.
+
+The `Policy` argument sent to STS is a restriction on a temporary session, not an IAM policy installation or role assignment. It cannot grant permissions beyond those allowed by the existing role and its boundary, or change the role's trust policy.
+
+The deployer requests a one-hour session, attaches a restrictive session policy, and verifies the returned account/assumed-role identity. Both the administrator-installed IAM role policy and session policy explicitly deny `ssm:*`, `secretsmanager:*`, `kms:Decrypt` and role chaining. Other permissions cover only required ECS/ECR operations and passing the two exact runtime roles. **The deny must be installed in IAM**: a hostile client could omit an optional session policy. Local code is not the durable authorization boundary.
 
 Non-secret targets live in reviewed JSON. Runtime parameter names/ARNs stay in the existing task definition. No deploy-time listing, fetching, decryption, shell export or parameter write occurs.
 

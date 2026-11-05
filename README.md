@@ -6,6 +6,60 @@ Deploy prebuilt images to an **existing** ECS/Fargate service without giving the
 
 Read [the migration guide](docs/MIGRATION.md), [the Auth0/AWS explanation](docs/AUTHENTICATION.md), and [the 19-service adoption checklist](docs/SERVICES.md) before testing.
 
+## Deployment flow: before and after
+
+These diagrams compare the legacy ECS path in `1.4.*` (using `v1.4.21` as the source reference) with the default ECS deployment in `2.0.9`. Service-specific migration/CloudFormation adapters add their reviewed steps; Platform UI uses its own S3/CloudFront adapter.
+
+### Before: 1.4.* — broker credentials returned to CircleCI
+
+```mermaid
+sequenceDiagram
+    participant CI as CircleCI deployment job
+    participant Broker as Auth0-backed credential broker
+    participant SSM as AWS Parameter Store
+    participant ECR as AWS ECR
+    participant ECS as AWS ECS
+    CI->>Broker: Client ID + secret, audience, caller-supplied build metadata
+    Note over Broker: Server-side credential issuance and authorization implementation not inspected
+    Broker-->>CI: access_token JWT containing AWS credential claims
+    CI->>CI: Decode JWT payload; extract AWS key, secret and session token
+    CI->>CI: Write AWS CLI configuration and awsenvconf exports
+    CI->>SSM: Request configuration with decryption using AWS credentials
+    SSM-->>CI: Parameter values written to generated configuration files
+    CI->>CI: Build image using the legacy pipeline
+    CI->>ECR: Authenticate and push image using AWS credentials
+    CI->>ECS: Register task definition and create/update service
+```
+
+The broker handled credential delivery, but CircleCI held the returned AWS credentials and made the AWS deployment calls itself. The client code decoded the broker JWT payload without verifying its signature, and the broker request used `curl -k`. The broker's internal AWS exchange and independent authorization checks are not established by this client code. Sources: [credential request, extraction and export](https://github.com/topcoder-platform/tc-deploy-scripts/blob/v1.4.21/awsconfiguration.sh#L19-L39), [parameter retrieval](https://github.com/topcoder-platform/tc-deploy-scripts/blob/v1.4.21/psvar-processor.sh), and [ECS deployment](https://github.com/topcoder-platform/tc-deploy-scripts/blob/v1.4.21/master_deploy.sh#L583-L623).
+
+### After: 2.0.9 — direct CircleCI OIDC with pre-provisioned IAM
+
+```mermaid
+flowchart TD
+    Admin["Separate administrator / private IaC workflow"] --> IAM["Pre-create OIDC provider, role trust, scoped permissions and boundary"]
+    Source["Reviewed source and pipeline configuration"] --> Build["Build job: committed-source image; no deployment context"]
+    Build --> Artifact["Image archive in workflow-specific workspace"]
+    Artifact --> Gate{"Production release?"}
+    Gate -->|Yes| Approval["CircleCI manual approval"]
+    Gate -->|No: dev| Deploy["Deploy job: restricted context, pinned executor and suite"]
+    Approval --> Deploy
+    Issuer["CircleCI issues signed, short-lived OIDC v3 job token"] --> Deploy
+    Deploy -->|"Token + role ARN + restrictive session policy"| STS["AWS STS validates token and role trust conditions"]
+    IAM --> STS
+    STS -->|"Temporary scoped AWS credentials"| Identity["Verify returned account and assumed role"]
+    Identity --> Preflight["Validate existing service, runtime roles and task configuration"]
+    Preflight --> ECR["Push immutable release tag; verify digest and vulnerability scan"]
+    ECR --> ECS["Register task revision; preserve runtime secret references; update existing service"]
+    ECS --> Health["Verify exact running revision, image digests and health; fail on rollback or timeout"]
+    ECS --> Runtime["ECS agent uses separate execution role at task startup"]
+    Runtime --> Secrets["Retrieve only the task's permitted runtime secrets"]
+```
+
+AWS trust restricts the accepted CircleCI identity by issuer/audience, project, checkout repository/ref and configuration repository/ref. The script and role ARN are not credentials. The STS session policy restricts the session; it does not install IAM policies or create roles. `tcdeploy.py` has no `policies` command in `v2.0.9`. Deployment roles and boundaries explicitly deny Parameter Store, Secrets Manager, KMS decryption and role chaining; runtime retrieval uses the separate ECS execution role.
+
+Production approval is enforced by the protected CircleCI workflow and context controls, not inferred by AWS from a token. Signed tokens and temporary AWS credentials still require protection: a stolen valid token or compromised authorized job can exercise the access it is allowed. See [authentication and trust boundaries](docs/AUTHENTICATION.md) for details.
+
 ## Requirements
 
 - A reviewed, digest-pinned Linux executor containing Python >=3.10 with the `tarfile` extraction-filter security backport, AWS CLI v2, Docker/Buildx, Git and system CA certificates. No package installation in the credential-bearing job. This deployer has no external Python dependencies.

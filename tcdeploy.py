@@ -404,7 +404,7 @@ class Publisher:
         require(non_root(info.get('Config', {}).get('User')), 'Application images must run as a non-root user')
         return info
 
-    def publish(self, name, local, tag, deadline):
+    def publish(self, name, local, tag, deadline=None):
         info = self.inspect(local)
         require(info.get('Config', {}).get('Labels', {}).get('org.opencontainers.image.revision') == tag[:40], 'Image source revision does not match this release')
         repository = self.m['images'][name]
@@ -439,16 +439,39 @@ class Publisher:
         require(manifest.get('config', {}).get('digest') == info['configDigest'], 'Pushed artifact differs from local image (multi-platform indexes are unsupported)')
         # Repositories must scan on push (basic or enhanced). No start_image_scan
         # fallback that can bypass a failed/missing organizational scan policy.
+        started = time.monotonic()
+        # Start each image's budget only after publication and digest verification.
+        # Retain an optional earlier absolute deadline for existing custom callers.
+        deadline = min(started + 1800, deadline) if deadline is not None else started + 1800
+        last_status, last_reported, next_report = 'NOT_CHECKED', None, started
+
+        def report(status):
+            nonlocal last_status, last_reported, next_report
+            last_status = status
+            now = time.monotonic()
+            if status != last_reported or now >= next_report:
+                print(f'Image scan: repository={repository} digest={digest} '
+                      f'status={status} elapsed={int(now - started)}s', flush=True)
+                last_reported, next_report = status, now + 60
+
         while time.monotonic() < deadline:
             try:
                 scan = self.aws.call('ecr', 'describe-image-scan-findings', repositoryName=repository, imageId={'imageDigest': digest})
             except DeployError as exc:
                 if str(exc).endswith(': ScanNotFoundException'):
-                    time.sleep(10)
+                    report('SCAN_NOT_FOUND')
+                    time.sleep(max(0, min(10, deadline - time.monotonic())))
                     continue
                 raise
             status = scan.get('imageScanStatus', {}).get('status')
             findings = scan.get('imageScanFindings', {})
+            # Never log raw AWS status descriptions, findings or response payloads.
+            safe_status = status if status in ('COMPLETE', 'ACTIVE', 'IN_PROGRESS', 'PENDING',
+                'FAILED', 'UNSUPPORTED_IMAGE', 'SCAN_ELIGIBILITY_EXPIRED', 'FINDINGS_UNAVAILABLE',
+                'LIMIT_EXCEEDED') else 'UNKNOWN'
+            if status in ('COMPLETE', 'ACTIVE') and not findings.get('imageScanCompletedAt'):
+                safe_status += '_AWAITING_COMPLETION'
+            report(safe_status)
             if status in ('COMPLETE', 'ACTIVE') and findings.get('imageScanCompletedAt'):
                 timestamp = findings['imageScanCompletedAt']
                 if isinstance(timestamp, (int, float)):
@@ -465,8 +488,10 @@ class Publisher:
                 require(not any(counts.get(level, 0) for level in blocked), 'Image scan exceeds the release threshold')
                 return uri + '@' + digest
             require(status in ('IN_PROGRESS', 'PENDING', 'ACTIVE'), 'Image scan failed or is unsupported')
-            time.sleep(10)
-        raise DeployError('Image scan timed out; service was not updated')
+            time.sleep(max(0, min(10, deadline - time.monotonic())))
+        raise DeployError(f'Image scan timed out after {int(time.monotonic() - started)}s: '
+                          f'repository={repository} digest={digest} last_status={last_status}; '
+                          'service was not updated')
 
 
 def deploy(aws, m, locals_by_name, release, publisher, health_checks=None):
@@ -481,9 +506,8 @@ def deploy(aws, m, locals_by_name, release, publisher, health_checks=None):
     # only used for validation and never sent to AWS.
     task_request(m, task, tags, {name: 'preflight@sha256:' + '0' * 64 for name in m['images']}, health_checks)
     images = {}
-    scan_deadline = time.monotonic() + 900
     for name, local in locals_by_name.items():
-        images[name] = publisher.publish(name, local, release, scan_deadline)
+        images[name] = publisher.publish(name, local, release)
     current = read_service(aws, m)
     require(stable(current, definition), 'Service changed during image publication; retry after inspection')
     request = task_request(m, task, tags, images, health_checks)

@@ -100,7 +100,7 @@ class FakePublisher:
         self.m = m
         self.calls = []
 
-    def publish(self, name, local, release, deadline):
+    def publish(self, name, local, release, deadline=None):
         self.calls.append(name)
         return f"{self.m['accountId']}.dkr.ecr.{self.m['region']}.amazonaws.com/{self.m['images'][name]}@{DIGEST}"
 
@@ -684,6 +684,121 @@ class PublisherTests(unittest.TestCase):
             result = self.publisher.publish(self.image_name, 'example:build', RELEASE, float('inf'))
         return result, docker
 
+    def timed_publish(self, scan_response, *, upload_seconds=600, verification_seconds=120,
+                      repeats=1, deadline=None):
+        clock = [0.0]
+        started = []
+        observations = []
+
+        def docker(*args, **kwargs):
+            if args[0] == 'push':
+                clock[0] += upload_seconds
+            return json.dumps([self.info])
+
+        def ecr(api, op, **params):
+            response = self.ecr(api, op, **params)
+            if op == 'batch-get-image':
+                clock[0] += verification_seconds
+                started.append(clock[0])
+            if op == 'describe-image-scan-findings':
+                elapsed = clock[0] - started[-1]
+                observations.append(elapsed)
+                return scan_response(elapsed)
+            return response
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        with patch.object(self.publisher, 'docker', side_effect=docker), \
+                patch.object(self.aws, 'call', side_effect=ecr), \
+                patch.object(d.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(d.time, 'sleep', side_effect=sleep):
+            results = [self.publisher.publish(self.image_name, 'example:build', RELEASE, deadline)
+                       for _ in range(repeats)]
+        return results, observations
+
+    def test_scan_gets_thirty_minutes_after_upload_and_verification(self):
+        def scan(elapsed):
+            return self.scan if elapsed >= 1790 else {'imageScanStatus': {'status': 'IN_PROGRESS'}}
+        with patch('builtins.print'):
+            results, observations = self.timed_publish(scan)
+        self.assertEqual(observations[0], 0)
+        self.assertEqual(observations[-1], 1790)
+        self.assertTrue(results[0].endswith('@' + DIGEST))
+
+    def test_each_image_gets_a_fresh_scan_budget(self):
+        def scan(elapsed):
+            return self.scan if elapsed >= 1200 else {'imageScanStatus': {'status': 'PENDING'}}
+        with patch('builtins.print'):
+            results, observations = self.timed_publish(scan, repeats=2)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(observations.count(0), 2)
+        self.assertEqual(observations.count(1200), 2)
+
+    def test_pending_scan_times_out_with_safe_image_diagnostics_and_heartbeats(self):
+        with patch('builtins.print') as report, self.assertRaises(d.DeployError) as error:
+            self.timed_publish(lambda elapsed: {'imageScanStatus': {'status': 'PENDING',
+                'description': 'sensitive-description'}, 'private': 'sensitive-payload'})
+        self.assertIn('after 1800s', str(error.exception))
+        self.assertIn('repository=example-v6', str(error.exception))
+        self.assertIn('digest=' + DIGEST, str(error.exception))
+        self.assertIn('last_status=PENDING', str(error.exception))
+        self.assertIn('service was not updated', str(error.exception))
+        self.assertEqual(report.call_count, 30)
+        self.assertTrue(all(c.kwargs == {'flush': True} for c in report.call_args_list))
+        self.assertIn('elapsed=1740s', report.call_args.args[0])
+        self.assertNotIn('sensitive', str(report.call_args_list))
+
+    def test_scan_not_found_times_out_with_diagnostics(self):
+        def scan(elapsed):
+            raise d.DeployError('AWS ecr describe-image-scan-findings: ScanNotFoundException')
+        with patch('builtins.print') as report, self.assertRaises(d.DeployError) as error:
+            self.timed_publish(scan)
+        self.assertIn('after 1800s', str(error.exception))
+        self.assertIn('last_status=SCAN_NOT_FOUND', str(error.exception))
+        self.assertEqual(report.call_count, 30)
+
+    def test_active_without_completion_never_passes(self):
+        with patch('builtins.print'), self.assertRaises(d.DeployError) as error:
+            self.timed_publish(lambda elapsed: {'imageScanStatus': {'status': 'ACTIVE'},
+                'imageScanFindings': {'findingSeverityCounts': {}}})
+        self.assertIn('last_status=ACTIVE_AWAITING_COMPLETION', str(error.exception))
+
+    def test_scan_status_changes_are_logged_without_waiting_for_heartbeat(self):
+        def scan(elapsed):
+            if elapsed == 0:
+                raise d.DeployError('AWS ecr describe-image-scan-findings: ScanNotFoundException')
+            if elapsed == 10:
+                return {'imageScanStatus': {'status': 'PENDING'}}
+            if elapsed == 20:
+                return {'imageScanStatus': {'status': 'ACTIVE'}, 'imageScanFindings': {}}
+            return self.scan
+        with patch('builtins.print') as report:
+            self.timed_publish(scan)
+        self.assertEqual(report.call_count, 4)
+        for call, status in zip(report.call_args_list,
+                              ('SCAN_NOT_FOUND', 'PENDING', 'ACTIVE_AWAITING_COMPLETION', 'COMPLETE')):
+            self.assertIn('status=' + status + ' ', call.args[0])
+
+    def test_legacy_explicit_deadline_still_limits_wait(self):
+        with patch('builtins.print'), self.assertRaises(d.DeployError) as error:
+            self.timed_publish(lambda elapsed: {'imageScanStatus': {'status': 'PENDING'}},
+                               upload_seconds=0, verification_seconds=0, deadline=25)
+        self.assertIn('after 25s', str(error.exception))
+
+    def test_unrecognized_status_is_not_echoed(self):
+        with patch('builtins.print') as report, self.assertRaises(d.DeployError):
+            self.timed_publish(lambda elapsed: {'imageScanStatus': {'status': 'untrusted-secret'}})
+        self.assertIn('status=UNKNOWN', report.call_args.args[0])
+        self.assertNotIn('untrusted-secret', str(report.call_args_list))
+
+    def test_scan_api_errors_other_than_not_found_are_not_retried(self):
+        def scan(elapsed):
+            raise d.DeployError('AWS ecr describe-image-scan-findings: AccessDeniedException')
+        with self.assertRaisesRegex(d.DeployError, 'AccessDeniedException'):
+            self.timed_publish(scan)
+        self.assertEqual(self.calls.count('describe-image-scan-findings'), 1)
+
     def test_publish_verifies_digest_and_password_stdin(self):
         result, docker = self.publish()
         self.assertTrue(result.endswith('@' + DIGEST))
@@ -872,7 +987,7 @@ class PublisherTests(unittest.TestCase):
         with patch('builtins.print') as report:
             result, _ = self.publish()
         self.assertTrue(result.endswith('@' + DIGEST))
-        report.assert_called_once_with('Payload dev image scan counts: {"MEDIUM":4,"LOW":1}', flush=True)
+        report.assert_any_call('Payload dev image scan counts: {"MEDIUM":4,"LOW":1}', flush=True)
 
     def test_payload_keeps_strict_policy_by_default(self):
         self.payload_publisher('strict')

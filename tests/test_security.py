@@ -769,6 +769,24 @@ class PublisherTests(unittest.TestCase):
                     ('Component scanned: no known vulnerabilities.', 'Component skipped: marked as private.')]
         self.assertEqual(d.inspector_counts({'vulnerability_count': clean, 'messages': messages})['HIGH'], 0)
 
+    def test_info_details_disambiguate_other_only_with_complete_evidence(self):
+        counts = dict(critical=0, high=0, medium=0, low=0, other=1)
+        info = {'id': 'IN-DOCKER-008-001', 'severity': 'info'}
+        report = {'vulnerability_count': counts, 'vulnerabilities': [info],
+                  'messages': [{'info_message': 'Component scanned: no known vulnerabilities.'}]}
+        result = d.inspector_counts(report)
+        self.assertEqual((result['INFORMATIONAL'], result['UNDEFINED']), (1, 0))
+        for findings in ([], [{}], [{'severity': 'none'}], [{'severity': []}],
+                         [info, {'severity': 'none'}], [info, {'severity': 'medium'}]):
+            with self.subTest(findings=findings), self.assertRaises(d.InspectorThresholdExceeded):
+                d.inspector_counts({**report, 'vulnerabilities': findings})
+        with self.assertRaises(d.InspectorThresholdExceeded):
+            d.inspector_counts({**report, 'vulnerability_count': {**counts, 'other': 2}})
+        for override in ({'messages': []}, {'vulnerability_count': {**counts, 'other': 0}},
+                         {'messages': [{'error_message': 'partial scan'}]}):
+            with self.subTest(override=override), self.assertRaises(d.DeployError):
+                d.inspector_counts({**report, **override})
+
     def test_explicit_blockers_never_fall_back_to_registry_polling(self):
         self.m.update(environment='prod', branch='master')
         pending = {'imageScanStatus': {'status': 'PENDING'}}

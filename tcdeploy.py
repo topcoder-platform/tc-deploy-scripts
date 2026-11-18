@@ -404,18 +404,31 @@ def inspector_counts(report):
     if isinstance(findings, list):
         for finding in findings:
             severity = finding.get('severity') if isinstance(finding, dict) else None
-            # Inspector groups findings without a classified severity (including
-            # the literal "none") in the summary's "other" bucket.
-            observed[severity if isinstance(severity, str) and severity in levels else 'other'] += 1
-    blocking = ('critical', 'high', 'medium', 'other')
-    summary_blocks = isinstance(counts, dict) and any(type(counts.get(k)) is int and counts[k] > 0 for k in blocking)
-    if summary_blocks or any(observed[k] for k in blocking):
-        if valid_summary:
-            print('Inspector synchronous scan counts: ' + compact({
-                ('UNDEFINED' if k == 'other' else k.upper()): n for k, n in counts.items()}), flush=True)
+            if severity in ('info', 'informational'):
+                observed['INFORMATIONAL'] += 1
+            elif severity in ('critical', 'high', 'medium', 'low'):
+                observed[severity.upper()] += 1
+            else:
+                observed['UNDEFINED'] += 1
+
+    # Inspector aggregates informational and unclassified findings as "other".
+    # Every allowed informational finding must have an explicit detail record.
+    normalized = observed.copy()
+    if isinstance(counts, dict):
+        for level in ('critical', 'high', 'medium', 'low'):
+            n = counts.get(level)
+            if type(n) is int:
+                normalized[level.upper()] = max(observed[level.upper()], n)
+        other = counts.get('other')
+        if type(other) is int:
+            normalized['UNDEFINED'] = max(observed['UNDEFINED'], other - observed['INFORMATIONAL'])
+    if any(normalized[k] for k in PRODUCTION_BLOCKED):
+        print('Inspector synchronous scan counts: ' + compact(dict(normalized)), flush=True)
         raise InspectorThresholdExceeded('Image scan exceeds the release threshold')
     require(valid_summary, 'Invalid Inspector counts')
-    require(isinstance(findings, list) and observed == Counter(counts),
+    expected = {k: observed[k.upper()] for k in levels - {'other'}}
+    expected['other'] = observed['INFORMATIONAL'] + observed['UNDEFINED']
+    require(isinstance(findings, list) and counts == expected,
             'Inspector counts disagree with findings')
     messages = report.get('messages', [])
     known = {'Component scanned: no known vulnerabilities.', 'Component skipped: duplicate.',
@@ -424,9 +437,9 @@ def inspector_counts(report):
     require(isinstance(messages, list) and all(isinstance(m, dict) and
             m.get('info_message') in known and not (set(m) - {'info_message', 'purl', 'name'})
             for m in messages), 'Incomplete Inspector scan')
-    require(findings or any(m['info_message'].startswith('Component scanned:') for m in messages),
+    require(observed['LOW'] or any(m['info_message'].startswith('Component scanned:') for m in messages),
             'Inspector assessed no components')
-    return {('UNDEFINED' if k == 'other' else k.upper()): n for k, n in counts.items()}
+    return dict(normalized)
 
 
 

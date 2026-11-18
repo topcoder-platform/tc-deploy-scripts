@@ -379,10 +379,13 @@ def scan_counts(scan, m, repository, digest):
                 'Missing image scan severity counts without complete empty findings')
         return {}
     counts = findings['findingSeverityCounts']
-    severities = {'INFORMATIONAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'UNDEFINED'}
+    severities = {'INFORMATIONAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'UNDEFINED', 'UNTRIAGED'}
     require(isinstance(counts, dict) and set(counts) <= severities
             and all(type(count) is int and count >= 0 for count in counts.values()),
             'Invalid image scan severity counts')
+    if 'UNTRIAGED' in counts:
+        counts = dict(counts)
+        counts['UNDEFINED'] = counts.get('UNDEFINED', 0) + counts.pop('UNTRIAGED')
     return counts
 
 
@@ -393,7 +396,64 @@ SBOMGEN_URL = f'https://amazon-inspector-sbomgen.s3.amazonaws.com/{SBOMGEN_VERSI
 SBOMGEN_SHA256 = '3a50a5f6f0d825aa1aef5e568a2273a0e01285c5bbfda16e3155023a8ca9d816'
 
 
-def inspector_counts(report):
+# Temporary production risk acceptance for Node's bundled OpenSSL 3.5.9.
+OPENSSL_EXCEPTION_END = datetime(2026, 12, 2, tzinfo=timezone.utc)
+OPENSSL_REPOSITORIES = {
+    'bus-api-v6': 'bus-api-v6',
+    'terms-receiver-v6': 'terms-receiver-v6',
+    'project-billing-account-update-processor': 'project-billing-account-update-processor',
+    'gamification-api': 'tc-gamification',
+}
+OPENSSL_FINDINGS = {
+    'CVE-2026-95691': 'HIGH', 'CVE-2026-95692': 'HIGH', 'CVE-2026-88823': 'HIGH',
+    'CVE-2026-107496': 'HIGH', 'CVE-2026-88822': 'MEDIUM', 'CVE-2026-107493': 'UNDEFINED',
+    'CVE-2026-124709': 'UNDEFINED', 'CVE-2026-35190': 'UNDEFINED',
+}
+OPENSSL_HEADERS = {
+    f'/usr/local/include/node/openssl/archs/linux-x86_64/{arch}/include/openssl/opensslv.h'
+    for arch in ('asm', 'asm_avx2', 'no-asm')
+}
+
+
+def openssl_exception_applies(m, repository):
+    project = m.get('repository', '').removeprefix('github.com/topcoder-platform/')
+    return (m.get('repository') == 'github.com/topcoder-platform/' + project
+            and OPENSSL_REPOSITORIES.get(project) == repository
+            and repository and repository in m.get('images', {}).values()
+            and m.get('accountId') == '409275337247' and m.get('region') == 'us-east-1'
+            and m.get('environment') == 'prod' and m.get('branch') == 'master'
+            and datetime.now(timezone.utc) < OPENSSL_EXCEPTION_END)
+
+
+def matches_openssl_exception(cve, severity, packages, *, ecr):
+    if not isinstance(cve, str) or cve not in OPENSSL_FINDINGS or severity != OPENSSL_FINDINGS[cve]:
+        return False
+    if not isinstance(packages, list) or not packages:
+        return False
+    for pkg in packages:
+        if not isinstance(pkg, dict):
+            return False
+        if ecr:
+            if (pkg.get('packageManager'), pkg.get('name'), pkg.get('version'),
+                pkg.get('fixedInVersion')) != ('GENERIC', 'openssl/openssl', '3.5.9', '3.5.10'):
+                return False
+            path = pkg.get('filePath')
+        else:
+            if (pkg.get('installed_version'), pkg.get('fixed_version')) != (
+                    'pkg:generic/openssl/openssl@3.5.9', '3.5.10'):
+                return False
+            path = pkg.get('path')
+        if not isinstance(path, str) or path not in OPENSSL_HEADERS:
+            return False
+    return True
+
+
+def record_openssl_exception(image, accepted):
+    print(f'Temporary OpenSSL 3.5.9 exception: image={image} expires={OPENSSL_EXCEPTION_END.isoformat()} '
+          + 'findings=' + compact(sorted(accepted)), flush=True)
+
+
+def inspector_counts(report, *, manifest=None, repository=None, digest=None):
     require(isinstance(report, dict), 'Missing Inspector report')
     counts = report.get('vulnerability_count')
     levels = {'critical', 'high', 'medium', 'low', 'other'}
@@ -422,14 +482,27 @@ def inspector_counts(report):
         other = counts.get('other')
         if type(other) is int:
             normalized['UNDEFINED'] = max(observed['UNDEFINED'], other - observed['INFORMATIONAL'])
+    expected = {k: observed[k.upper()] for k in levels - {'other'}}
+    expected['other'] = observed['INFORMATIONAL'] + observed['UNDEFINED']
+    consistent = valid_summary and isinstance(findings, list) and counts == expected
+    accepted = {}
+    if (consistent and manifest and isinstance(digest, str) and DIGEST.fullmatch(digest)
+            and openssl_exception_applies(manifest, repository)):
+        for finding in findings:
+            if not isinstance(finding, dict) or finding.get('severity') not in ('high', 'medium', 'none'):
+                continue
+            level = 'UNDEFINED' if finding['severity'] == 'none' else finding['severity'].upper()
+            cve = finding.get('id')
+            if matches_openssl_exception(cve, level, finding.get('affects'), ecr=False):
+                if cve in accepted:
+                    raise InspectorThresholdExceeded('Duplicate finding in OpenSSL exception evidence')
+                accepted[cve] = level
+        normalized.subtract(accepted.values())
     if any(normalized[k] for k in PRODUCTION_BLOCKED):
         print('Inspector synchronous scan counts: ' + compact(dict(normalized)), flush=True)
         raise InspectorThresholdExceeded('Image scan exceeds the release threshold')
     require(valid_summary, 'Invalid Inspector counts')
-    expected = {k: observed[k.upper()] for k in levels - {'other'}}
-    expected['other'] = observed['INFORMATIONAL'] + observed['UNDEFINED']
-    require(isinstance(findings, list) and counts == expected,
-            'Inspector counts disagree with findings')
+    require(consistent, 'Inspector counts disagree with findings')
     messages = report.get('messages', [])
     known = {'Component scanned: no known vulnerabilities.', 'Component skipped: duplicate.',
              'Component skipped: no supported rules found.', 'Component skipped: no version in purl provided.',
@@ -440,6 +513,8 @@ def inspector_counts(report):
             for m in messages), 'Incomplete Inspector scan')
     require(observed['LOW'] or any(m['info_message'].startswith('Component scanned:') for m in messages),
             'Inspector assessed no components')
+    if accepted:
+        record_openssl_exception(repository + '@' + digest, accepted)
     return dict(normalized)
 
 
@@ -479,6 +554,64 @@ class Publisher:
     def check_production_counts(counts):
         require(not any(counts.get(level, 0) for level in PRODUCTION_BLOCKED),
                 'Image scan exceeds the release threshold')
+
+    def registry_counts(self, scan, repository, digest):
+        if not openssl_exception_applies(self.m, repository):
+            return scan_counts(scan, self.m, repository, digest)
+        counts = scan_counts(scan, self.m, repository, digest)
+        if (not any(counts.get(k, 0) for k in PRODUCTION_BLOCKED)
+                and not scan['imageScanFindings'].get('enhancedFindings') and not scan.get('nextToken')):
+            return counts
+
+        # Enhanced ECR counts are image-wide. Reconcile every page and every
+        # severity before subtracting any of the specifically accepted findings.
+        observed, accepted, seen, tokens = Counter(), {}, set(), set()
+        resource = arn(self.m, 'ecr', f'repository/{repository}/{digest}')
+        page = scan
+        while True:
+            details = page['imageScanFindings']
+            rows = details.get('enhancedFindings')
+            # ECR may emit a final empty basic-findings page after enhanced pages.
+            if rows is None and tokens and details.get('findings') == [] and not page.get('nextToken'):
+                rows = []
+            require(page.get('registryId') == self.m['accountId'] and page.get('repositoryName') == repository
+                    and page.get('imageId', {}).get('imageDigest') == digest
+                    and page.get('imageScanStatus', {}).get('status') == scan['imageScanStatus']['status']
+                    and not details.get('findings') and isinstance(rows, list),
+                    'OpenSSL exception requires complete enhanced findings for the requested image')
+            if 'findingSeverityCounts' in details:
+                require(scan_counts(page, self.m, repository, digest) == counts, 'ECR counts changed during pagination')
+            for finding in rows:
+                fid = finding.get('findingArn')
+                resources = finding.get('resources', [])
+                require(isinstance(fid, str) and fid and fid not in seen and finding.get('status') == 'ACTIVE'
+                        and len(resources) == 1 and resources[0].get('id') == resource
+                        and resources[0].get('type') == 'AWS_ECR_CONTAINER_IMAGE',
+                        'ECR finding identity mismatch')
+                seen.add(fid)
+                severity = finding.get('severity')
+                level = 'UNDEFINED' if severity == 'UNTRIAGED' else severity
+                require(level in counts, 'ECR finding severity differs from summary')
+                observed[level] += 1
+                vulnerability = finding.get('packageVulnerabilityDetails', {})
+                cve = vulnerability.get('vulnerabilityId')
+                if (finding.get('type') == 'PACKAGE_VULNERABILITY'
+                        and matches_openssl_exception(cve, level, vulnerability.get('vulnerablePackages'), ecr=True)):
+                    require(cve not in accepted, 'Duplicate finding in OpenSSL exception evidence')
+                    accepted[cve] = level
+            token = page.get('nextToken')
+            if not token:
+                break
+            require(isinstance(token, str) and token not in tokens, 'Repeated ECR pagination token')
+            tokens.add(token)
+            page = self.aws.call('ecr', 'describe-image-scan-findings', repositoryName=repository,
+                                 imageId={'imageDigest': digest}, nextToken=token)
+        require(observed == Counter(counts), 'ECR counts disagree with findings')
+        if accepted:
+            require(openssl_exception_applies(self.m, repository), 'OpenSSL exception expired')
+            observed.subtract(accepted.values())
+            record_openssl_exception(repository + '@' + digest, accepted)
+        return dict(observed)
 
     def synchronous_counts(self, image, info, repository, digest):
         # Only use this path when Inspector itself confirms the initial scan
@@ -523,7 +656,7 @@ class Publisher:
                 and not any('skipped_layer' in p['name'] for p in props),
                 'Inspector inventory differs from the verified image configuration or layers')
         response = self.aws.call('inspector-scan', 'scan-sbom', sbom=sbom, outputFormat='INSPECTOR')
-        return inspector_counts(response.get('sbom'))
+        return inspector_counts(response.get('sbom'), manifest=self.m, repository=repository, digest=digest)
 
     def publish(self, name, local, tag, deadline=None):
         info = self.inspect(local)
@@ -575,6 +708,7 @@ class Publisher:
                       f'status={status} elapsed={int(now - started)}s', flush=True)
                 last_reported, next_report = status, now + 60
 
+        checked_with_exception = False
         attempted_sync = False
         sync_counts = None
         while time.monotonic() < deadline:
@@ -602,7 +736,7 @@ class Publisher:
                 else:
                     completed = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                 require(0 <= (datetime.now(timezone.utc) - completed).total_seconds() < 86400, 'Image scan must have completed within the last 24 hours')
-                counts = scan_counts(scan, self.m, repository, digest)
+                counts = self.registry_counts(scan, repository, digest)
                 blocked = ('CRITICAL', 'HIGH', 'MEDIUM', 'UNDEFINED')
                 if self.scan_policy == 'payload-dev-high-critical':
                     blocked = ('CRITICAL', 'HIGH', 'UNDEFINED')
@@ -615,15 +749,18 @@ class Publisher:
                 # Re-read ECR after the synchronous call. A completed ECR result
                 # or terminal failure takes priority over the alternate evidence.
                 if sync_counts is not None:
+                    require(not checked_with_exception or openssl_exception_applies(self.m, repository),
+                            'OpenSSL exception expired')
                     require(scan.get('registryId') == self.m['accountId'] and scan.get('repositoryName') == repository
                             and scan.get('imageId', {}).get('imageDigest') == digest,
                             'Pending ECR scan does not identify the verified image')
                     if 'findingSeverityCounts' in findings:
-                        self.check_production_counts(scan_counts(scan, self.m, repository, digest))
+                        self.check_production_counts(self.registry_counts(scan, repository, digest))
                     print(f'Inspector synchronous scan passed: repository={repository} digest={digest}', flush=True)
                     return uri + '@' + digest
                 if not attempted_sync and time.monotonic() - started >= 90:
                     attempted_sync = True
+                    checked_with_exception = openssl_exception_applies(self.m, repository)
                     try:
                         sync_counts = self.synchronous_counts(image, info, repository, digest)
                     except InspectorThresholdExceeded:

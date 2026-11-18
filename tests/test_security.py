@@ -803,7 +803,7 @@ class PublisherTests(unittest.TestCase):
         counts = dict(critical=0, high=0, medium=0, low=0, other=0)
         for summary, findings in (({**counts, 'other': 1}, [{'severity': 'none'}]),
                                   ({**counts, 'high': 1}, []), (counts, [{'severity': 'high'}])):
-            def assess(*args):
+            def assess(*args, **kwargs):
                 return d.inspector_counts({'vulnerability_count': summary, 'vulnerabilities': findings,
                                            'messages': [{'info_message': 'unrecognized notice'}]})
             with self.subTest(summary=summary), patch.object(self.publisher, 'synchronous_counts', side_effect=assess):
@@ -985,6 +985,19 @@ class PublisherTests(unittest.TestCase):
             'imageId': {'imageDigest': DIGEST}, 'imageScanStatus': {'status': status},
             'imageScanFindings': {'imageScanCompletedAt': datetime.now(timezone.utc).isoformat(),
                                   'findings': []}}
+
+    def test_scoped_completed_empty_result_waits_for_confirmed_scan(self):
+        self.m.update(environment='prod', branch='master')
+        self.empty_scan()
+        with patch.object(d, 'openssl_exception_applies', return_value=True):
+            with patch.object(self.publisher, 'synchronous_counts', return_value={'LOW': 1}) as sync:
+                results, observations = self.timed_publish(lambda elapsed: self.scan)
+                self.assertTrue(results[0].endswith('@' + DIGEST))
+                self.assertGreaterEqual(observations[-1], 90)
+                self.assertTrue(sync.call_args.kwargs['confirm_completed'])
+            with patch.object(self.publisher, 'synchronous_counts', return_value={'HIGH': 1}):
+                with self.assertRaisesRegex(d.DeployError, 'exceeds the release threshold'):
+                    self.timed_publish(lambda elapsed: self.scan)
 
     def test_completed_empty_scan_without_counts(self):
         for status in ('ACTIVE', 'COMPLETE'):

@@ -117,3 +117,18 @@ class OpenSSLExceptionTests(unittest.TestCase):
             self.registry(self.scan)
         f['packageVulnerabilityDetails']['vulnerabilityId'] = 'CVE-2026-107493'
         self.registry(self.scan)
+
+    def test_new_ratings_only_match_the_same_previously_untriaged_cves(self):
+        for cve, rating in (('CVE-2026-107493', 'HIGH'), ('CVE-2026-124709', 'HIGH'),
+                            ('CVE-2026-35190', 'MEDIUM')):
+            with self.subTest(cve=cve):
+                body = self.scan['imageScanFindings']
+                finding = body['enhancedFindings'][0]
+                finding['packageVulnerabilityDetails']['vulnerabilityId'] = cve
+                finding['severity'] = rating
+                body['findingSeverityCounts'] = {rating: 1}
+                self.registry(self.scan)
+                finding['severity'] = 'CRITICAL'
+                body['findingSeverityCounts'] = {'CRITICAL': 1}
+                with self.assertRaises(d.DeployError):
+                    self.registry(self.scan)

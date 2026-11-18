@@ -405,9 +405,10 @@ OPENSSL_REPOSITORIES = {
     'gamification-api': 'tc-gamification',
 }
 OPENSSL_FINDINGS = {
-    'CVE-2026-95691': 'HIGH', 'CVE-2026-95692': 'HIGH', 'CVE-2026-88823': 'HIGH',
-    'CVE-2026-107496': 'HIGH', 'CVE-2026-88822': 'MEDIUM', 'CVE-2026-107493': 'UNDEFINED',
-    'CVE-2026-124709': 'UNDEFINED', 'CVE-2026-35190': 'UNDEFINED',
+    'CVE-2026-95691': {'HIGH'}, 'CVE-2026-95692': {'HIGH'}, 'CVE-2026-88823': {'HIGH'},
+    'CVE-2026-107496': {'HIGH'}, 'CVE-2026-88822': {'MEDIUM'},
+    'CVE-2026-107493': {'UNDEFINED', 'HIGH'}, 'CVE-2026-124709': {'UNDEFINED', 'HIGH'},
+    'CVE-2026-35190': {'UNDEFINED', 'MEDIUM'},
 }
 OPENSSL_HEADERS = {
     f'/usr/local/include/node/openssl/archs/linux-x86_64/{arch}/include/openssl/opensslv.h'
@@ -426,7 +427,7 @@ def openssl_exception_applies(m, repository):
 
 
 def matches_openssl_exception(cve, severity, packages, *, ecr):
-    if not isinstance(cve, str) or cve not in OPENSSL_FINDINGS or severity != OPENSSL_FINDINGS[cve]:
+    if not isinstance(cve, str) or cve not in OPENSSL_FINDINGS or severity not in OPENSSL_FINDINGS[cve]:
         return False
     if not isinstance(packages, list) or not packages:
         return False
@@ -613,21 +614,23 @@ class Publisher:
             record_openssl_exception(repository + '@' + digest, accepted)
         return dict(observed)
 
-    def synchronous_counts(self, image, info, repository, digest):
-        # Only use this path when Inspector itself confirms the initial scan
-        # is queued for this exact image in a continuously/on-push scanned repo.
+    def synchronous_counts(self, image, info, repository, digest, *, confirm_completed=False):
+        # Require Inspector coverage of the exact image before a synchronous assessment.
         resource = arn(self.m, 'ecr', f'repository/{repository}/{digest}')
         coverage = self.aws.call('inspector2', 'list-coverage', filterCriteria={
             'ecrRepositoryName': [{'comparison': 'EQUALS', 'value': repository}],
             'resourceId': [{'comparison': 'EQUALS', 'value': resource}]})
         rows = coverage.get('coveredResources', [])
+        accepted_status = {'PENDING_INITIAL_SCAN'}
+        if confirm_completed and openssl_exception_applies(self.m, repository):
+            accepted_status.add('SUCCESSFUL')
         require(not coverage.get('nextToken') and len(rows) == 1
                 and rows[0].get('resourceId') == resource
                 and rows[0].get('accountId') == self.m['accountId']
                 and rows[0].get('resourceType') == 'AWS_ECR_CONTAINER_IMAGE'
                 and rows[0].get('scanType') == 'PACKAGE'
-                and rows[0].get('scanStatus', {}).get('reason') == 'PENDING_INITIAL_SCAN',
-                'Inspector did not confirm a queued initial image scan')
+                and rows[0].get('scanStatus', {}).get('reason') in accepted_status,
+                'Inspector did not confirm image scan coverage')
         with tempfile.TemporaryDirectory(prefix='tc-inspector-') as tmp:
             work = Path(tmp)
             env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': tmp, 'LANG': 'C.UTF-8'}
@@ -709,7 +712,7 @@ class Publisher:
                 last_reported, next_report = status, now + 60
 
         checked_with_exception = False
-        attempted_sync = False
+        attempted_sync = set()
         sync_counts = None
         while time.monotonic() < deadline:
             try:
@@ -729,6 +732,7 @@ class Publisher:
             if status in ('COMPLETE', 'ACTIVE') and not findings.get('imageScanCompletedAt'):
                 safe_status += '_AWAITING_COMPLETION'
             report(safe_status)
+            confirm_completed = False
             if status in ('COMPLETE', 'ACTIVE') and findings.get('imageScanCompletedAt'):
                 timestamp = findings['imageScanCompletedAt']
                 if isinstance(timestamp, (int, float)):
@@ -743,9 +747,15 @@ class Publisher:
                     # Report validated counts, never raw findings or AWS responses.
                     print('Payload dev image scan counts: ' + compact(counts), flush=True)
                 require(not any(counts.get(level, 0) for level in blocked), 'Image scan exceeds the release threshold')
-                return uri + '@' + digest
-            require(status in ('IN_PROGRESS', 'PENDING', 'ACTIVE'), 'Image scan failed or is unsupported')
-            if status == 'PENDING' and self.m['environment'] == 'prod':
+                # A new image can become ACTIVE before Inspector publishes its findings.
+                # Confirm a clean native result for these four services during the waiver.
+                confirm_completed = openssl_exception_applies(self.m, repository) and not any(
+                    findings.get('findingSeverityCounts', {}).get(level) for level in (*PRODUCTION_BLOCKED, 'UNTRIAGED'))
+                if not confirm_completed:
+                    return uri + '@' + digest
+                report('AWAITING_FINDING_CONFIRMATION')
+            require(confirm_completed or status in ('IN_PROGRESS', 'PENDING', 'ACTIVE'), 'Image scan failed or is unsupported')
+            if (status == 'PENDING' or confirm_completed) and self.m['environment'] == 'prod':
                 # Re-read ECR after the synchronous call. A completed ECR result
                 # or terminal failure takes priority over the alternate evidence.
                 if sync_counts is not None:
@@ -758,11 +768,11 @@ class Publisher:
                         self.check_production_counts(self.registry_counts(scan, repository, digest))
                     print(f'Inspector synchronous scan passed: repository={repository} digest={digest}', flush=True)
                     return uri + '@' + digest
-                if not attempted_sync and time.monotonic() - started >= 90:
-                    attempted_sync = True
+                if status not in attempted_sync and time.monotonic() - started >= 90:
+                    attempted_sync.add(status)
                     checked_with_exception = openssl_exception_applies(self.m, repository)
                     try:
-                        sync_counts = self.synchronous_counts(image, info, repository, digest)
+                        sync_counts = self.synchronous_counts(image, info, repository, digest, confirm_completed=confirm_completed)
                     except InspectorThresholdExceeded:
                         raise
                     except (DeployError, OSError, BadZipFile, ValueError, KeyError, TypeError) as exc:

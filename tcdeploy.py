@@ -27,6 +27,13 @@ class DeployError(Exception):
     pass
 
 
+class InspectorThresholdExceeded(DeployError):
+    """Explicit blocking evidence must never fall back to another scan."""
+
+
+PRODUCTION_BLOCKED = ('CRITICAL', 'HIGH', 'MEDIUM', 'UNDEFINED')
+
+
 def require(condition, message):
     if not condition:
         raise DeployError(message)
@@ -390,16 +397,30 @@ def inspector_counts(report):
     require(isinstance(report, dict), 'Missing Inspector report')
     counts = report.get('vulnerability_count')
     levels = {'critical', 'high', 'medium', 'low', 'other'}
-    require(isinstance(counts, dict) and set(counts) == levels and
-            all(type(n) is int and n >= 0 for n in counts.values()), 'Invalid Inspector counts')
+    valid_summary = (isinstance(counts, dict) and set(counts) == levels and
+                     all(type(n) is int and n >= 0 for n in counts.values()))
     findings = report.get('vulnerabilities', [])
-    require(isinstance(findings, list) and all(isinstance(f, dict) and
-            f.get('severity') in levels for f in findings), 'Invalid Inspector findings')
-    require(Counter(f['severity'] for f in findings) == Counter(counts),
+    observed = Counter()
+    if isinstance(findings, list):
+        for finding in findings:
+            severity = finding.get('severity') if isinstance(finding, dict) else None
+            # Inspector groups findings without a classified severity (including
+            # the literal "none") in the summary's "other" bucket.
+            observed[severity if isinstance(severity, str) and severity in levels else 'other'] += 1
+    blocking = ('critical', 'high', 'medium', 'other')
+    summary_blocks = isinstance(counts, dict) and any(type(counts.get(k)) is int and counts[k] > 0 for k in blocking)
+    if summary_blocks or any(observed[k] for k in blocking):
+        if valid_summary:
+            print('Inspector synchronous scan counts: ' + compact({
+                ('UNDEFINED' if k == 'other' else k.upper()): n for k, n in counts.items()}), flush=True)
+        raise InspectorThresholdExceeded('Image scan exceeds the release threshold')
+    require(valid_summary, 'Invalid Inspector counts')
+    require(isinstance(findings, list) and observed == Counter(counts),
             'Inspector counts disagree with findings')
     messages = report.get('messages', [])
     known = {'Component scanned: no known vulnerabilities.', 'Component skipped: duplicate.',
-             'Component skipped: no supported rules found.', 'Component skipped: no version in purl provided.'}
+             'Component skipped: no supported rules found.', 'Component skipped: no version in purl provided.',
+             'Component skipped: marked as private.'}
     require(isinstance(messages, list) and all(isinstance(m, dict) and
             m.get('info_message') in known and not (set(m) - {'info_message', 'purl', 'name'})
             for m in messages), 'Incomplete Inspector scan')
@@ -442,7 +463,7 @@ class Publisher:
 
     @staticmethod
     def check_production_counts(counts):
-        require(not any(counts.get(level, 0) for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'UNDEFINED')),
+        require(not any(counts.get(level, 0) for level in PRODUCTION_BLOCKED),
                 'Image scan exceeds the release threshold')
 
     def synchronous_counts(self, image, info, repository, digest):
@@ -591,6 +612,8 @@ class Publisher:
                     attempted_sync = True
                     try:
                         sync_counts = self.synchronous_counts(image, info, repository, digest)
+                    except InspectorThresholdExceeded:
+                        raise
                     except (DeployError, OSError, BadZipFile, ValueError, KeyError, TypeError) as exc:
                         message = str(exc) if isinstance(exc, DeployError) else type(exc).__name__
                         print(f'Inspector synchronous scan unavailable ({message}); continuing ECR polling', flush=True)

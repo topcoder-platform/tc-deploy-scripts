@@ -763,6 +763,25 @@ class PublisherTests(unittest.TestCase):
             with self.subTest(malformed=malformed), self.assertRaises(d.DeployError):
                 d.inspector_counts(malformed)
 
+    def test_private_component_notice_allows_a_completed_assessment(self):
+        clean = dict(critical=0, high=0, medium=0, low=0, other=0)
+        messages = [{'info_message': reason, 'purl': 'pkg:npm/example@1'} for reason in
+                    ('Component scanned: no known vulnerabilities.', 'Component skipped: marked as private.')]
+        self.assertEqual(d.inspector_counts({'vulnerability_count': clean, 'messages': messages})['HIGH'], 0)
+
+    def test_explicit_blockers_never_fall_back_to_registry_polling(self):
+        self.m.update(environment='prod', branch='master')
+        pending = {'imageScanStatus': {'status': 'PENDING'}}
+        counts = dict(critical=0, high=0, medium=0, low=0, other=0)
+        for summary, findings in (({**counts, 'other': 1}, [{'severity': 'none'}]),
+                                  ({**counts, 'high': 1}, []), (counts, [{'severity': 'high'}])):
+            def assess(*args):
+                return d.inspector_counts({'vulnerability_count': summary, 'vulnerabilities': findings,
+                                           'messages': [{'info_message': 'unrecognized notice'}]})
+            with self.subTest(summary=summary), patch.object(self.publisher, 'synchronous_counts', side_effect=assess):
+                with self.assertRaises(d.InspectorThresholdExceeded):
+                    self.timed_publish(lambda elapsed: self.scan if elapsed > 90 else pending)
+
     def test_scan_gets_thirty_minutes_after_upload_and_verification(self):
         def scan(elapsed):
             return self.scan if elapsed >= 1790 else {'imageScanStatus': {'status': 'IN_PROGRESS'}}

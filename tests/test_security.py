@@ -769,6 +769,16 @@ class PublisherTests(unittest.TestCase):
                     ('Component scanned: no known vulnerabilities.', 'Component skipped: marked as private.')]
         self.assertEqual(d.inspector_counts({'vulnerability_count': clean, 'messages': messages})['HIGH'], 0)
 
+    def test_duplicate_component_notice_can_include_maven_version(self):
+        scanned = {'info_message': 'Component scanned: no known vulnerabilities.', 'purl': 'pkg:maven/example@1'}
+        duplicate = {'info_message': 'Component skipped: duplicate.', 'name': 'maven-model', 'version': '3.9.16'}
+        report = {'vulnerability_count': dict(critical=0, high=0, medium=0, low=0, other=0),
+                  'messages': [scanned, duplicate]}
+        self.assertEqual(d.inspector_counts(report)['HIGH'], 0)
+        for extra in ({'error_message': 'incomplete assessment'}, {'version': {'error': 'incomplete'}}):
+            with self.subTest(extra=extra), self.assertRaises(d.DeployError):
+                d.inspector_counts({**report, 'messages': [scanned, {**duplicate, **extra}]})
+
     def test_info_details_disambiguate_other_only_with_complete_evidence(self):
         counts = dict(critical=0, high=0, medium=0, low=0, other=1)
         info = {'id': 'IN-DOCKER-008-001', 'severity': 'info'}

@@ -435,7 +435,8 @@ def inspector_counts(report):
              'Component skipped: no supported rules found.', 'Component skipped: no version in purl provided.',
              'Component skipped: marked as private.'}
     require(isinstance(messages, list) and all(isinstance(m, dict) and
-            m.get('info_message') in known and not (set(m) - {'info_message', 'purl', 'name'})
+            m.get('info_message') in known and set(m) <= {'info_message', 'purl', 'name', 'version'}
+            and all(isinstance(value, str) for value in m.values())
             for m in messages), 'Incomplete Inspector scan')
     require(observed['LOW'] or any(m['info_message'].startswith('Component scanned:') for m in messages),
             'Inspector assessed no components')

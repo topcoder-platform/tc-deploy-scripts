@@ -717,6 +717,52 @@ class PublisherTests(unittest.TestCase):
                        for _ in range(repeats)]
         return results, observations
 
+    def test_queued_prod_scan_uses_synchronous_result_once_and_rechecks_ecr(self):
+        self.m.update(environment='prod', branch='master')
+        pending = {'imageScanStatus': {'status': 'PENDING'}, 'registryId': self.m['accountId'],
+                   'repositoryName': self.image_name, 'imageId': {'imageDigest': DIGEST}}
+        with patch.object(self.publisher, 'synchronous_counts', return_value={'LOW': 1}) as sync:
+            results, polls = self.timed_publish(lambda elapsed: pending)
+        sync.assert_called_once()
+        self.assertEqual(polls[-2:], [90, 90])
+        self.assertTrue(results[0].endswith('@' + DIGEST))
+
+    def test_synchronous_error_continues_polling_and_completed_ecr_result_wins(self):
+        self.m.update(environment='prod', branch='master')
+        pending = {'imageScanStatus': {'status': 'PENDING'}}
+        self.scan['imageScanFindings']['findingSeverityCounts'] = {'HIGH': 1}
+        with patch.object(self.publisher, 'synchronous_counts', side_effect=d.DeployError('unavailable')) as sync:
+            with self.assertRaisesRegex(d.DeployError, 'exceeds the release threshold'):
+                self.timed_publish(lambda elapsed: self.scan if elapsed >= 100 else pending)
+        sync.assert_called_once()
+
+    def test_synchronous_result_cannot_override_concurrent_registry_failure(self):
+        self.m.update(environment='prod', branch='master')
+        with patch.object(self.publisher, 'synchronous_counts', return_value={}) as sync:
+            def scan(elapsed):
+                return {'imageScanStatus': {'status': 'FAILED' if sync.called else 'PENDING'}}
+            with self.assertRaisesRegex(d.DeployError, 'failed or is unsupported'):
+                self.timed_publish(scan)
+
+    def test_blocking_synchronous_counts_stop_release(self):
+        self.m.update(environment='prod', branch='master')
+        for level in ('MEDIUM', 'HIGH', 'CRITICAL', 'UNDEFINED'):
+            with self.subTest(level=level), patch.object(self.publisher, 'synchronous_counts', return_value={level: 1}):
+                with self.assertRaisesRegex(d.DeployError, 'exceeds the release threshold'):
+                    self.timed_publish(lambda elapsed: {'imageScanStatus': {'status': 'PENDING'}})
+
+    def test_synchronous_reports_require_assessed_components_and_consistent_counts(self):
+        counts = dict(critical=0, high=0, medium=0, low=0, other=0)
+        clean = {'vulnerability_count': counts, 'messages': [{'info_message': 'Component scanned: no known vulnerabilities.', 'purl': 'pkg:npm/example@1'}]}
+        self.assertEqual(d.inspector_counts(clean)['HIGH'], 0)
+        for malformed in ({}, {'vulnerability_count': counts}, {**clean, 'vulnerability_count': {}},
+                {**clean, 'vulnerability_count': {**counts, 'high': 1}},
+                {**clean, 'messages': [{'error_message': 'partial scan'}]},
+                {**clean, 'messages': [{'info_message': 'Component skipped: no supported rules found.'}]},
+                {**clean, 'vulnerabilities': [{'severity': 'critical'}]}):
+            with self.subTest(malformed=malformed), self.assertRaises(d.DeployError):
+                d.inspector_counts(malformed)
+
     def test_scan_gets_thirty_minutes_after_upload_and_verification(self):
         def scan(elapsed):
             return self.scan if elapsed >= 1790 else {'imageScanStatus': {'status': 'IN_PROGRESS'}}

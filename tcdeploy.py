@@ -6,9 +6,11 @@ ambient AWS identity, parameter discovery, infrastructure creation or build.
 """
 import argparse
 import base64
+from collections import Counter
 from contextlib import ExitStack
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,6 +20,7 @@ import sys
 import tempfile
 import time
 from urllib.parse import urlsplit
+from zipfile import ZipFile, BadZipFile
 
 
 class DeployError(Exception):
@@ -102,9 +105,11 @@ ADAPTER_ACTIONS = frozenset({
 })
 
 
-def session_policy(additional_actions=()):
+def session_policy(additional_actions=(), *, production=False):
     require(set(additional_actions) <= ADAPTER_ACTIONS, 'Unsupported custom deployment capability')
     result = deepcopy(SESSION_POLICY)
+    if production:
+        result['Statement'][1]['Action'].append('inspector-scan:ScanSbom')
     result['Statement'][1]['Action'] += sorted(set(additional_actions) - set(result['Statement'][1]['Action']))
     require(len(compact(result)) <= 2048, 'Session policy exceeds the STS limit')
     return result
@@ -163,6 +168,7 @@ class AWS:
             'cloudformation': {'describe-stacks', 'update-stack', 'describe-stack-events', 'describe-stack-resources'},
             'elbv2': {'describe-target-health'},
             'inspector2': {'list-coverage', 'list-findings'},
+            'inspector-scan': {'scan-sbom'},
         }
         require(api_service in ('sts', 'ecs', 'ecr') or operation in adapter_reads.get(api_service, set()),
                 'This deployer cannot call secret or unreviewed infrastructure APIs')
@@ -183,7 +189,7 @@ def authenticate(m, token, additional_actions=()):
     aws = AWS(m['region'])
     response = aws.call('sts', 'assume-role-with-web-identity', RoleArn=m['deployRoleArn'],
         RoleSessionName='tc-deploy-' + str(int(time.time())), WebIdentityToken=token,
-        DurationSeconds=3600, Policy=compact(session_policy(additional_actions)))
+        DurationSeconds=3600, Policy=compact(session_policy(additional_actions, production=m['environment'] == 'prod')))
     credentials = response.get('Credentials', {})
     for key in ('AccessKeyId', 'SecretAccessKey', 'SessionToken', 'Expiration'):
         require(isinstance(credentials.get(key), str) and credentials[key], 'STS returned incomplete temporary credentials')
@@ -373,6 +379,36 @@ def scan_counts(scan, m, repository, digest):
     return counts
 
 
+# AWS publishes versioned SBOM Generator archives. Verify the entire archive
+# before reading its binary. The generator never receives AWS/Docker credentials.
+SBOMGEN_VERSION = '1.17.7'
+SBOMGEN_URL = f'https://amazon-inspector-sbomgen.s3.amazonaws.com/{SBOMGEN_VERSION}/linux/amd64/inspector-sbomgen.zip'
+SBOMGEN_SHA256 = '3a50a5f6f0d825aa1aef5e568a2273a0e01285c5bbfda16e3155023a8ca9d816'
+
+
+def inspector_counts(report):
+    require(isinstance(report, dict), 'Missing Inspector report')
+    counts = report.get('vulnerability_count')
+    levels = {'critical', 'high', 'medium', 'low', 'other'}
+    require(isinstance(counts, dict) and set(counts) == levels and
+            all(type(n) is int and n >= 0 for n in counts.values()), 'Invalid Inspector counts')
+    findings = report.get('vulnerabilities', [])
+    require(isinstance(findings, list) and all(isinstance(f, dict) and
+            f.get('severity') in levels for f in findings), 'Invalid Inspector findings')
+    require(Counter(f['severity'] for f in findings) == Counter(counts),
+            'Inspector counts disagree with findings')
+    messages = report.get('messages', [])
+    known = {'Component scanned: no known vulnerabilities.', 'Component skipped: duplicate.',
+             'Component skipped: no supported rules found.', 'Component skipped: no version in purl provided.'}
+    require(isinstance(messages, list) and all(isinstance(m, dict) and
+            m.get('info_message') in known and not (set(m) - {'info_message', 'purl', 'name'})
+            for m in messages), 'Incomplete Inspector scan')
+    require(findings or any(m['info_message'].startswith('Component scanned:') for m in messages),
+            'Inspector assessed no components')
+    return {('UNDEFINED' if k == 'other' else k.upper()): n for k, n in counts.items()}
+
+
+
 class Publisher:
     def __init__(self, aws, m, directory, *, scan_policy='strict'):
         require(scan_policy in ('strict', 'payload-dev-high-critical'), 'Unsupported image scan policy')
@@ -403,6 +439,56 @@ class Publisher:
         validate_environment(entries)
         require(non_root(info.get('Config', {}).get('User')), 'Application images must run as a non-root user')
         return info
+
+    @staticmethod
+    def check_production_counts(counts):
+        require(not any(counts.get(level, 0) for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'UNDEFINED')),
+                'Image scan exceeds the release threshold')
+
+    def synchronous_counts(self, image, info, repository, digest):
+        # Only use this path when Inspector itself confirms the initial scan
+        # is queued for this exact image in a continuously/on-push scanned repo.
+        resource = arn(self.m, 'ecr', f'repository/{repository}/{digest}')
+        coverage = self.aws.call('inspector2', 'list-coverage', filterCriteria={
+            'ecrRepositoryName': [{'comparison': 'EQUALS', 'value': repository}],
+            'resourceId': [{'comparison': 'EQUALS', 'value': resource}]})
+        rows = coverage.get('coveredResources', [])
+        require(not coverage.get('nextToken') and len(rows) == 1
+                and rows[0].get('resourceId') == resource
+                and rows[0].get('accountId') == self.m['accountId']
+                and rows[0].get('resourceType') == 'AWS_ECR_CONTAINER_IMAGE'
+                and rows[0].get('scanType') == 'PACKAGE'
+                and rows[0].get('scanStatus', {}).get('reason') == 'PENDING_INITIAL_SCAN',
+                'Inspector did not confirm a queued initial image scan')
+        with tempfile.TemporaryDirectory(prefix='tc-inspector-') as tmp:
+            work = Path(tmp)
+            env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': tmp, 'LANG': 'C.UTF-8'}
+            archive, binary = work / 'generator.zip', work / 'inspector-sbomgen'
+            execute(['curl', '--fail', '--silent', '--proto', '=https', '--max-time', '60',
+                     '--max-filesize', '33554432', '--output', str(archive), SBOMGEN_URL], env)
+            require(hashlib.sha256(archive.read_bytes()).hexdigest() == SBOMGEN_SHA256,
+                    'Inspector SBOM generator checksum mismatch')
+            with ZipFile(archive) as bundle:
+                binary.write_bytes(bundle.read(f'inspector-sbomgen-{SBOMGEN_VERSION}/linux/amd64/inspector-sbomgen'))
+            binary.chmod(0o700)
+            tar, output = work / 'image.tar', work / 'sbom.json'
+            self.docker('image', 'save', '--output', str(tar), image, timeout=180)
+            execute([str(binary), 'container', '--image', str(tar), '--skip-cloud-metadata',
+                     '--max-read-file-size', '0', '-o', str(output)], env, timeout=300)
+            sbom = json.loads(output.read_text(), object_pairs_hook=unique_object)
+        require(sbom.get('bomFormat') == 'CycloneDX' and sbom.get('components'),
+                'Inspector image inventory is empty or invalid')
+        component = sbom.get('metadata', {}).get('component', {})
+        props = component.get('properties', [])
+        prefix = 'amazon:inspector:sbom_generator:'
+        layers = info.get('RootFS', {}).get('Layers')
+        require(component.get('type') == 'container'
+                and [p['value'] for p in props if p['name'] == prefix + 'image_id'] == [info['configDigest']]
+                and layers and [p['value'] for p in props if p['name'] == prefix + 'layer_diff_id'] == layers
+                and not any('skipped_layer' in p['name'] for p in props),
+                'Inspector inventory differs from the verified image configuration or layers')
+        response = self.aws.call('inspector-scan', 'scan-sbom', sbom=sbom, outputFormat='INSPECTOR')
+        return inspector_counts(response.get('sbom'))
 
     def publish(self, name, local, tag, deadline=None):
         info = self.inspect(local)
@@ -454,6 +540,8 @@ class Publisher:
                       f'status={status} elapsed={int(now - started)}s', flush=True)
                 last_reported, next_report = status, now + 60
 
+        attempted_sync = False
+        sync_counts = None
         while time.monotonic() < deadline:
             try:
                 scan = self.aws.call('ecr', 'describe-image-scan-findings', repositoryName=repository, imageId={'imageDigest': digest})
@@ -488,6 +576,28 @@ class Publisher:
                 require(not any(counts.get(level, 0) for level in blocked), 'Image scan exceeds the release threshold')
                 return uri + '@' + digest
             require(status in ('IN_PROGRESS', 'PENDING', 'ACTIVE'), 'Image scan failed or is unsupported')
+            if status == 'PENDING' and self.m['environment'] == 'prod':
+                # Re-read ECR after the synchronous call. A completed ECR result
+                # or terminal failure takes priority over the alternate evidence.
+                if sync_counts is not None:
+                    require(scan.get('registryId') == self.m['accountId'] and scan.get('repositoryName') == repository
+                            and scan.get('imageId', {}).get('imageDigest') == digest,
+                            'Pending ECR scan does not identify the verified image')
+                    if 'findingSeverityCounts' in findings:
+                        self.check_production_counts(scan_counts(scan, self.m, repository, digest))
+                    print(f'Inspector synchronous scan passed: repository={repository} digest={digest}', flush=True)
+                    return uri + '@' + digest
+                if not attempted_sync and time.monotonic() - started >= 90:
+                    attempted_sync = True
+                    try:
+                        sync_counts = self.synchronous_counts(image, info, repository, digest)
+                    except (DeployError, OSError, BadZipFile, ValueError, KeyError, TypeError) as exc:
+                        message = str(exc) if isinstance(exc, DeployError) else type(exc).__name__
+                        print(f'Inspector synchronous scan unavailable ({message}); continuing ECR polling', flush=True)
+                    if sync_counts is not None:
+                        print('Inspector synchronous scan counts: ' + compact(sync_counts), flush=True)
+                        self.check_production_counts(sync_counts)
+                        continue
             time.sleep(max(0, min(10, deadline - time.monotonic())))
         raise DeployError(f'Image scan timed out after {int(time.monotonic() - started)}s: '
                           f'repository={repository} digest={digest} last_status={last_status}; '
